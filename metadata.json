@@ -1,0 +1,6 @@
+{
+  "name": "Mintzakats",
+  "description": "Euskara akatsetatik ikasteko eguneroko galdetegi interaktiboa: 20 galdera nahasi egunero, akatsen koadernoa eta azalpen gramatikalak.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
