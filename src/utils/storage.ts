@@ -1,6 +1,7 @@
 import { AppState, DayOfWeek, DayProgress, UserMistake } from '../types';
 
-const STORAGE_KEY = 'akatsik_ez_app_state_v2';
+const STORAGE_KEY = 'akatsik_ez_app_state_v3';
+const PREV_STORAGE_KEY = 'akatsik_ez_app_state_v2';
 
 export function getTodayDayOfWeek(): DayOfWeek {
   const dayIndex = new Date().getDay(); // 0 is Sunday, 1 is Monday, etc.
@@ -80,10 +81,26 @@ export function getDefaultState(): AppState {
 export function loadAppState(): AppState {
   if (typeof window === 'undefined') return getDefaultState();
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    let isMigratedFromV2 = false;
+
+    if (!raw) {
+      const prevRaw = localStorage.getItem(PREV_STORAGE_KEY);
+      if (prevRaw) {
+        raw = prevRaw;
+        isMigratedFromV2 = true;
+      }
+    }
+
     if (!raw) return getDefaultState();
     const parsed = JSON.parse(raw) as Partial<AppState>;
     const defaultState = getDefaultState();
+
+    // If migrating from v2, start fresh on dailyProgress so Supabase questions show immediately
+    if (isMigratedFromV2) {
+      parsed.dailyProgress = getDefaultDailyProgress();
+      parsed.currentQuestionIndex = 0;
+    }
 
     const today = getTodayDateString();
     const yesterday = getYesterdayDateString();

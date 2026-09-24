@@ -20,7 +20,9 @@ export interface ExplanationDetails {
 export interface Question {
   id: string;
   day?: DayOfWeek;
-  order: number;           // 1 to 20
+  order: number;           // 1 to 20 or sequence
+  supabaseId?: number;     // Original ID in Supabase euskera_questions table
+  source?: 'supabase' | 'local';
   prompt: string;          // Question text
   options: [string, string, string, string]; // Exactly 4 options A, B, C, D
   correctIndex: number;    // 0, 1, 2, or 3

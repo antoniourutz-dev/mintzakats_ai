@@ -30,8 +30,64 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
     setShowDeepDetails(false);
   }, [question.id]);
 
+  // Keyboard navigation for desktop efficiency (1-4, A-D, Enter/Space for next)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept when focusing inputs or textareas
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+
+      if (!hasAnswered) {
+        if (key === '1' || key === 'a') {
+          e.preventDefault();
+          handleOptionClick(0);
+        } else if (key === '2' || key === 'b') {
+          e.preventDefault();
+          handleOptionClick(1);
+        } else if (key === '3' || key === 'c') {
+          e.preventDefault();
+          handleOptionClick(2);
+        } else if (key === '4' || key === 'd') {
+          e.preventDefault();
+          handleOptionClick(3);
+        }
+      } else {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          onNextQuestion();
+        } else if (key === 'e' || key === 'x') {
+          e.preventDefault();
+          setShowDeepDetails(prev => !prev);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [hasAnswered, question, onNextQuestion]);
+
   const handleOptionClick = (idx: number) => {
     if (hasAnswered) return;
+
+    // Mobile tactile haptics if supported
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        if (idx === question.correctIndex) {
+          navigator.vibrate(20);
+        } else {
+          navigator.vibrate([30, 40, 30]);
+        }
+      } catch {
+        // Safe catch for browsers blocking vibrate
+      }
+    }
+
     onSelectOption(idx);
   };
 
@@ -39,13 +95,37 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
 
   return (
     <div className="w-full max-w-3xl mx-auto px-3 sm:px-4 py-2 sm:py-3 flex flex-col justify-start">
+      {/* Question Origin & Category Badges */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        {question.source === 'supabase' || question.supabaseId !== undefined ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider bg-sky-100 text-sky-950 border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000]">
+            <span>☁️</span>
+            <span>Supabase #{question.supabaseId ?? question.id.replace('sb_', '')}</span>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-neutral-700 bg-neutral-100 border border-neutral-300 rounded">
+            Galdera #{question.order}
+          </span>
+        )}
+        <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-neutral-100 text-neutral-700 border border-neutral-300 rounded">
+          {question.category}
+        </span>
+        <span className="px-2 py-0.5 text-[10px] font-black text-emerald-800 bg-emerald-100 border border-emerald-300 rounded">
+          {question.level || 'B2'}
+        </span>
+      </div>
+
       {/* Question Prompt */}
       <h2 className="text-lg sm:text-xl md:text-2xl font-black text-neutral-950 leading-snug mb-3 tracking-tight">
         {question.prompt}
       </h2>
 
       {/* 4 Options Grid (2 columns on sm+ screens to eliminate vertical scrolling) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5 mb-3">
+      <div 
+        role="group" 
+        aria-label="Aukerak"
+        className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5 mb-3"
+      >
         {question.options.map((optionText, idx) => {
           const letter = OPTION_LETTERS[idx];
           const isSelected = selectedOption === idx;
@@ -56,7 +136,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
 
           if (hasAnswered) {
             if (isCorrect) {
-              cardStyle = 'bg-emerald-50 border-emerald-900 text-emerald-950 shadow-[3px_3px_0px_0px_#065f46]';
+              cardStyle = 'bg-emerald-50 border-emerald-900 text-emerald-950 shadow-[3px_3px_0px_0px_#065f46] ring-2 ring-emerald-500/20';
               badgeStyle = 'bg-emerald-600 text-white border-emerald-900';
             } else if (isSelected && !isCorrect) {
               cardStyle = 'bg-rose-50 border-rose-900 text-rose-950 shadow-[3px_3px_0px_0px_#9f1239]';
@@ -73,7 +153,8 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
               onClick={() => handleOptionClick(idx)}
               disabled={hasAnswered}
               id={`question-option-${letter.toLowerCase()}`}
-              className={`w-full flex items-center justify-between p-2.5 sm:p-3 rounded-xl border-2 transition-all text-left min-h-[52px] ${cardStyle} ${
+              aria-pressed={isSelected}
+              className={`w-full flex items-center justify-between p-2.5 sm:p-3 rounded-xl border-2 transition-all text-left min-h-[52px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${cardStyle} ${
                 !hasAnswered ? 'cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_0_#000]' : 'cursor-default'
               }`}
             >
@@ -91,17 +172,26 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
                 </span>
               </div>
 
-              {/* Status Icon */}
-              {hasAnswered && (
-                <div className="shrink-0 ml-1.5">
-                  {isCorrect && (
-                    <CheckCircle className="w-5 h-5 text-emerald-600 fill-emerald-100" />
-                  )}
-                  {isSelected && !isCorrect && (
-                    <XCircle className="w-5 h-5 text-rose-600 fill-rose-100" />
-                  )}
-                </div>
-              )}
+              <div className="flex items-center gap-1.5 shrink-0 ml-1.5">
+                {/* Keyboard shortcut hint for desktop */}
+                {!hasAnswered && (
+                  <span className="hidden sm:inline-block px-1.5 py-0.5 text-[9px] font-black text-neutral-400 bg-neutral-100 border border-neutral-200 rounded">
+                    {idx + 1}
+                  </span>
+                )}
+
+                {/* Status Icon */}
+                {hasAnswered && (
+                  <div>
+                    {isCorrect && (
+                      <CheckCircle className="w-5 h-5 text-emerald-600 fill-emerald-100" />
+                    )}
+                    {isSelected && !isCorrect && (
+                      <XCircle className="w-5 h-5 text-rose-600 fill-rose-100" />
+                    )}
+                  </div>
+                )}
+              </div>
             </button>
           );
         })}
@@ -121,7 +211,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
               {isUserCorrect ? (
                 <div className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg border-2 border-black shadow-[2px_2px_0_0_#000] text-xs sm:text-sm font-black flex items-center gap-1.5 shrink-0">
                   <CheckCircle className="w-4 h-4" />
-                  <span>BIKAIN! (+10 XP)</span>
+                  <span>BIKAIN! (+15 XP)</span>
                 </div>
               ) : (
                 <div className="px-2.5 py-1 bg-rose-600 text-white rounded-lg border-2 border-black shadow-[2px_2px_0_0_#000] text-xs sm:text-sm font-black flex items-center gap-1.5 shrink-0">
@@ -141,9 +231,12 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
             <button
               onClick={onNextQuestion}
               id="next-question-btn"
-              className="flex items-center gap-1.5 px-4 py-2 bg-neutral-950 hover:bg-neutral-800 active:translate-x-0.5 active:translate-y-0.5 text-white rounded-lg border-2 border-black shadow-[3px_3px_0_0_#000000] text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0"
+              className="flex items-center gap-1.5 px-3.5 sm:px-4 py-2 bg-neutral-950 hover:bg-neutral-800 active:translate-x-0.5 active:translate-y-0.5 text-white rounded-lg border-2 border-black shadow-[3px_3px_0_0_#000000] text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
             >
               <span>{isLastQuestion ? 'Emaitzak Ikusi' : 'Hurrengo Galdera'}</span>
+              <span className="hidden sm:inline-block px-1 py-0.2 bg-neutral-800 text-[10px] text-neutral-300 rounded border border-neutral-700">
+                ↵
+              </span>
               <ArrowRight className="w-4 h-4 stroke-[2.5]" />
             </button>
           </div>

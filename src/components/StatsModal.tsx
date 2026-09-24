@@ -12,28 +12,41 @@ interface StatsModalProps {
 export const StatsModal: React.FC<StatsModalProps> = ({ isOpen, onClose, state }) => {
   if (!isOpen) return null;
 
-  // Calculate stats across saved progress
+  // Calculate comprehensive stats across current and historical progress
   let totalAnswered = 0;
   let totalCorrect = 0;
-  let completedCount = 0;
+  let completedCount = (state.completedQuizDates || []).length;
 
+  if (state.dailyProgress) {
+    const todayAnswered = Object.keys(state.dailyProgress.answers || {}).length;
+    totalAnswered += todayAnswered;
+    totalCorrect += state.dailyProgress.score || 0;
+    if (state.dailyProgress.completed && completedCount === 0) {
+      completedCount = 1;
+    }
+  }
+
+  // Also accumulate historical entries if present
   const progressEntries = Object.values(state.progress || {});
   progressEntries.forEach(dayProg => {
     if (dayProg) {
       const answeredInDay = Object.keys(dayProg.answers || {}).length;
       totalAnswered += answeredInDay;
-      totalCorrect += dayProg.score;
-      if (dayProg.completed) completedCount++;
+      totalCorrect += dayProg.score || 0;
     }
   });
 
   const accuracy = totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0;
   const totalMistakesPending = Object.keys(state.mistakes || {}).length;
+  const masteredMistakesCount = Object.values(state.mistakes || {}).filter(m => m.timesCorrect >= 1).length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
       <div 
         id="stats-modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Estatistikak eta Lorpenak"
         className="w-full max-w-2xl max-h-[90vh] bg-white rounded-xl border-2 border-black shadow-[6px_6px_0_0_#000000] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
       >
         {/* Header */}
@@ -54,6 +67,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({ isOpen, onClose, state }
 
           <button
             onClick={onClose}
+            aria-label="Itxi"
             className="p-1.5 rounded-lg border-2 border-black bg-white hover:bg-neutral-100 shadow-[2px_2px_0_0_#000] transition-all cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -62,38 +76,38 @@ export const StatsModal: React.FC<StatsModalProps> = ({ isOpen, onClose, state }
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-[#F8F9FA]">
-          {/* Top Metrics Cards */}
+          {/* Top Metrics Cards with Tabular Numerals */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 bg-white rounded-lg border-2 border-black shadow-[2px_2px_0_0_#000]">
               <div className="flex items-center gap-1 text-orange-600 mb-1">
                 <Flame className="w-4 h-4 fill-orange-500" />
-                <span className="text-[10px] font-black uppercase">Segida</span>
+                <span className="text-[10px] font-black uppercase tracking-wider">Segida</span>
               </div>
-              <span className="text-xl font-black text-neutral-900">{state.streak} egun</span>
+              <span className="text-xl font-black text-neutral-900 tabular-nums">{state.streak || 0} egun</span>
             </div>
 
             <div className="p-3 bg-white rounded-lg border-2 border-black shadow-[2px_2px_0_0_#000]">
               <div className="flex items-center gap-1 text-indigo-600 mb-1">
                 <Zap className="w-4 h-4 fill-indigo-500" />
-                <span className="text-[10px] font-black uppercase">Puntuak</span>
+                <span className="text-[10px] font-black uppercase tracking-wider">Puntuak</span>
               </div>
-              <span className="text-xl font-black text-neutral-900">{state.xp} XP</span>
+              <span className="text-xl font-black text-neutral-900 tabular-nums">{state.xp} XP</span>
             </div>
 
             <div className="p-3 bg-white rounded-lg border-2 border-black shadow-[2px_2px_0_0_#000]">
               <div className="flex items-center gap-1 text-emerald-600 mb-1">
                 <TrendingUp className="w-4 h-4" />
-                <span className="text-[10px] font-black uppercase">Zehaztasuna</span>
+                <span className="text-[10px] font-black uppercase tracking-wider">Zehaztasuna</span>
               </div>
-              <span className="text-xl font-black text-neutral-900">%{accuracy}</span>
+              <span className="text-xl font-black text-neutral-900 tabular-nums">%{accuracy}</span>
             </div>
 
             <div className="p-3 bg-white rounded-lg border-2 border-black shadow-[2px_2px_0_0_#000]">
               <div className="flex items-center gap-1 text-rose-600 mb-1">
                 <BookOpen className="w-4 h-4" />
-                <span className="text-[10px] font-black uppercase">Akatsak</span>
+                <span className="text-[10px] font-black uppercase tracking-wider">Akatsak</span>
               </div>
-              <span className="text-xl font-black text-neutral-900">{totalMistakesPending} berrikusteko</span>
+              <span className="text-xl font-black text-neutral-900 tabular-nums">{totalMistakesPending} koadernoan</span>
             </div>
           </div>
 
@@ -104,10 +118,12 @@ export const StatsModal: React.FC<StatsModalProps> = ({ isOpen, onClose, state }
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {APP_BADGES.map(badge => {
-                let isUnlocked = state.unlockedBadges.includes(badge.id);
+                let isUnlocked = (state.unlockedBadges || []).includes(badge.id);
                 if (badge.id === 'first_step' && completedCount >= 1) isUnlocked = true;
-                if (badge.id === 'three_streak' && state.streak >= 3) isUnlocked = true;
-                if (badge.id === 'week_master' && (state.streak >= 7 || completedCount >= 7)) isUnlocked = true;
+                if (badge.id === 'three_streak' && ((state.streak || 0) >= 3 || (state.bestStreak || 0) >= 3)) isUnlocked = true;
+                if (badge.id === 'week_master' && ((state.streak || 0) >= 7 || completedCount >= 7 || (state.bestStreak || 0) >= 7)) isUnlocked = true;
+                if (badge.id === 'perfect_day' && (state.dailyProgress?.score || 0) >= 18) isUnlocked = true;
+                if (badge.id === 'mistake_hunter' && masteredMistakesCount >= 1) isUnlocked = true;
 
                 return (
                   <div
@@ -118,7 +134,9 @@ export const StatsModal: React.FC<StatsModalProps> = ({ isOpen, onClose, state }
                         : 'bg-neutral-100 border-neutral-300 opacity-60'
                     }`}
                   >
-                    <span className="text-2xl shrink-0">{badge.icon}</span>
+                    <span className="text-2xl shrink-0" role="img" aria-label={badge.title}>
+                      {badge.icon}
+                    </span>
                     <div>
                       <h4 className="text-xs font-black text-neutral-900 flex items-center gap-1">
                         {badge.title}

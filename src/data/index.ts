@@ -100,9 +100,17 @@ export const QUESTION_MAP: Record<string, Question> = ALL_QUESTIONS.reduce((acc,
   return acc;
 }, {} as Record<string, Question>);
 
+export function registerDynamicQuestions(questions: Question[]): void {
+  questions.forEach(q => {
+    if (q && q.id) {
+      QUESTION_MAP[q.id] = q;
+    }
+  });
+}
+
 /**
  * Returns 20 mixed questions selected across all categories and difficulty levels.
- * When integrated with Supabase, questions will come directly from the database.
+ * Guarantees 100% unique questions with no repeats on the same day.
  */
 export function getDailyMixedQuestions(seedDate?: string): Question[] {
   // Deterministic shuffle seed based on date string if provided
@@ -113,23 +121,40 @@ export function getDailyMixedQuestions(seedDate?: string): Question[] {
     hash |= 0;
   }
 
-  // Interleave questions from different sets to ensure diverse grammar coverage
   const mixedPool: Question[] = [];
-  const maxLen = 20;
-  for (let i = 0; i < maxLen; i++) {
-    const sets = [
-      astearteaQuestions, // Deklinabidea
-      asteazkenaQuestions, // Aditzak
-      ostegunaQuestions,   // Akats ohikoenak
-      ostiralaQuestions,   // Lokuzioak
-      astelehenaQuestions, // Denbora
-      larunbataQuestions,  // Hiztegia
-      igandeaQuestions     // Bateratua
-    ];
-    // Rotate and pick
-    const chosenSet = sets[i % sets.length];
-    const qIndex = (Math.abs(hash) + i * 3) % chosenSet.length;
-    mixedPool.push(chosenSet[qIndex]);
+  const usedIds = new Set<string>();
+
+  const sets = [
+    astearteaQuestions, // Deklinabidea
+    asteazkenaQuestions, // Aditzak
+    ostegunaQuestions,   // Akats ohikoenak
+    ostiralaQuestions,   // Lokuzioak
+    astelehenaQuestions, // Denbora
+    larunbataQuestions,  // Hiztegia
+    igandeaQuestions     // Bateratua
+  ];
+
+  let attempt = 0;
+  while (mixedPool.length < 20 && attempt < 120) {
+    const chosenSet = sets[attempt % sets.length];
+    const qIndex = (Math.abs(hash) + attempt * 7) % chosenSet.length;
+    const q = chosenSet[qIndex];
+    if (q && !usedIds.has(q.id)) {
+      usedIds.add(q.id);
+      mixedPool.push(q);
+    }
+    attempt++;
+  }
+
+  // Fallback to fill any remaining slots from ALL_QUESTIONS
+  if (mixedPool.length < 20) {
+    for (const q of ALL_QUESTIONS) {
+      if (!usedIds.has(q.id)) {
+        usedIds.add(q.id);
+        mixedPool.push(q);
+        if (mixedPool.length >= 20) break;
+      }
+    }
   }
 
   // Map into 1..20 order

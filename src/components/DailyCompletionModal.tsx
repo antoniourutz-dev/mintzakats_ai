@@ -49,7 +49,7 @@ export const DailyCompletionModal: React.FC<DailyCompletionModalProps> = ({
           <Trophy className="w-8 h-8 text-neutral-900" />
         </div>
 
-        <span className="inline-block px-3 py-1 bg-yellow-100 border border-black text-amber-900 font-black text-xs uppercase tracking-wider rounded-full mb-2">
+        <span className="inline-block px-3 py-1 bg-yellow-100 border-2 border-black text-amber-950 font-black text-xs uppercase tracking-wider rounded-lg mb-2 shadow-[2px_2px_0_0_#000]">
           Gaurko 20 Galderak Amaituta!
         </span>
 
@@ -66,15 +66,15 @@ export const DailyCompletionModal: React.FC<DailyCompletionModalProps> = ({
         <div className="grid grid-cols-3 gap-2.5 p-4 bg-[#F8F9FA] rounded-xl border-2 border-black shadow-[3px_3px_0_0_#000] mb-6">
           <div>
             <span className="text-[11px] font-black uppercase text-neutral-500 block">Puntuazioa</span>
-            <span className="text-2xl font-black text-neutral-900">{progress.score} / 20</span>
+            <span className="text-2xl font-black text-neutral-900 tabular-nums">{progress.score} / 20</span>
           </div>
           <div>
             <span className="text-[11px] font-black uppercase text-neutral-500 block">Zehaztasuna</span>
-            <span className="text-2xl font-black text-emerald-600">%{percentage}</span>
+            <span className="text-2xl font-black text-emerald-600 tabular-nums">%{percentage}</span>
           </div>
           <div>
             <span className="text-[11px] font-black uppercase text-neutral-500 block">Akatsak</span>
-            <span className={`text-2xl font-black ${mistakesCountToday > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+            <span className={`text-2xl font-black tabular-nums ${mistakesCountToday > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
               {mistakesCountToday}
             </span>
           </div>

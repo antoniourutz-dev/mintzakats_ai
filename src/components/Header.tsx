@@ -35,12 +35,14 @@ export const Header: React.FC<HeaderProps> = ({
             MK
           </div>
           <div>
-            <h1 className="text-base sm:text-lg font-black text-neutral-950 tracking-tight leading-none flex items-center gap-1.5">
-              Mintzakats
-              <span className="hidden sm:inline-block px-1.5 py-0.2 text-[9px] font-black uppercase tracking-wider bg-yellow-300 border border-black rounded shadow-[1px_1px_0_0_#000]">
-                Euskara
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-base sm:text-lg font-black text-neutral-950 tracking-tight leading-none">
+                Mintzakats
+              </h1>
+              <span className="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-950 border border-emerald-400 rounded">
+                v2.2 · Supabase
               </span>
-            </h1>
+            </div>
           </div>
         </div>
 
@@ -132,6 +134,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenStatsModal}
             id="open-stats-modal-btn"
+            aria-label="Estatistikak eta Txapak"
             title="Estatistikak eta Txapak"
             className="p-1 sm:p-1.5 bg-white hover:bg-neutral-100 border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000000] text-neutral-800 transition-all cursor-pointer"
           >
