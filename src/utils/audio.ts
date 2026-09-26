@@ -1,7 +1,28 @@
-// Audio removed per user preference - safe no-op stubs
-export function playClickSound(): void {}
-export function playCorrectSound(): void {}
-export function playWrongSound(): void {}
-export function playStreakCelebrationSound(): void {}
-export function playFanfareSound(): void {}
-export function speakBasqueText(_text: string): void {}
+/**
+ * Audio Engine disabled per user specification.
+ * All sound effects are muted/no-op to ensure a completely silent and distraction-free experience.
+ */
+
+export function playCountdownBeep(_freq = 660, _duration = 0.15): void {
+  // Audio muted
+}
+
+export function playStartChime(): void {
+  // Audio muted
+}
+
+export function playTickSound(): void {
+  // Audio muted
+}
+
+export function playCorrectSound(): void {
+  // Audio muted
+}
+
+export function playWrongSound(): void {
+  // Audio muted
+}
+
+export function playStreakMilestoneSound(): void {
+  // Audio muted
+}

@@ -23,7 +23,7 @@ export const igandeaQuestions: Question[] = [
         { letter: 'C', reason: '«-ro» eta «behin» ezin dira batera jarri («hiru astero» EDO «hiru astean behin»).' },
         { letter: 'D', reason: '«astez aste» bezalakoetatik nahastua da.' }
       ],
-      tip: 'Egunean behin, hiru astean behin, urtean behin.'
+      tip: 'Egunero, hiru astean behin, urtean behin.'
     }
   },
   {

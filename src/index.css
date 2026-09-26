@@ -1,1 +1,57 @@
 @import "tailwindcss";
+
+/* Responsive horizontal scrolling without vertical scrollbars */
+.horizontal-scroll {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.horizontal-scroll::-webkit-scrollbar {
+  height: 6px;
+  display: block;
+}
+
+.horizontal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.horizontal-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+.horizontal-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Custom styled vertical scrollbar for modals and scrollable views */
+.custom-scroll-y {
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.custom-scroll-y::-webkit-scrollbar {
+  width: 6px;
+  display: block;
+}
+
+.custom-scroll-y::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scroll-y::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+.custom-scroll-y::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

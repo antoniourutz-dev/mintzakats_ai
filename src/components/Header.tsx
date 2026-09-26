@@ -35,14 +35,9 @@ export const Header: React.FC<HeaderProps> = ({
             MK
           </div>
           <div>
-            <div className="flex items-center gap-1.5">
-              <h1 className="text-base sm:text-lg font-black text-neutral-950 tracking-tight leading-none">
-                Mintzakats
-              </h1>
-              <span className="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-950 border border-emerald-400 rounded">
-                v2.2 · Supabase
-              </span>
-            </div>
+            <h1 className="text-base sm:text-lg font-black text-neutral-950 tracking-tight leading-none">
+              Mintzakats
+            </h1>
           </div>
         </div>
 

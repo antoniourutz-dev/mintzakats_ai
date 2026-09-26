@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, ArrowRight, Lightbulb, BookOpen, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { CheckCircle, XCircle, ArrowRight } from 'lucide-react';
 import { Question } from '../types';
 
 interface QuestionCardProps {
@@ -9,7 +9,6 @@ interface QuestionCardProps {
   onSelectOption: (optionIndex: number) => void;
   onNextQuestion: () => void;
   isLastQuestion: boolean;
-  onOpenMistakesNotebook?: () => void;
 }
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'] as const;
@@ -21,19 +20,10 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
   onSelectOption,
   onNextQuestion,
   isLastQuestion,
-  onOpenMistakesNotebook,
 }) => {
-  const [showDeepDetails, setShowDeepDetails] = useState(false);
-
-  // Reset deep details toggle on question change
-  useEffect(() => {
-    setShowDeepDetails(false);
-  }, [question.id]);
-
   // Keyboard navigation for desktop efficiency (1-4, A-D, Enter/Space for next)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept when focusing inputs or textareas
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement
@@ -46,264 +36,119 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
       if (!hasAnswered) {
         if (key === '1' || key === 'a') {
           e.preventDefault();
-          handleOptionClick(0);
+          onSelectOption(0);
         } else if (key === '2' || key === 'b') {
           e.preventDefault();
-          handleOptionClick(1);
+          onSelectOption(1);
         } else if (key === '3' || key === 'c') {
           e.preventDefault();
-          handleOptionClick(2);
+          onSelectOption(2);
         } else if (key === '4' || key === 'd') {
           e.preventDefault();
-          handleOptionClick(3);
+          onSelectOption(3);
         }
       } else {
-        if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight') {
+        if (key === 'enter' || key === ' ' || key === 'arrowright') {
           e.preventDefault();
           onNextQuestion();
-        } else if (key === 'e' || key === 'x') {
-          e.preventDefault();
-          setShowDeepDetails(prev => !prev);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hasAnswered, question, onNextQuestion]);
-
-  const handleOptionClick = (idx: number) => {
-    if (hasAnswered) return;
-
-    // Mobile tactile haptics if supported
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      try {
-        if (idx === question.correctIndex) {
-          navigator.vibrate(20);
-        } else {
-          navigator.vibrate([30, 40, 30]);
-        }
-      } catch {
-        // Safe catch for browsers blocking vibrate
-      }
-    }
-
-    onSelectOption(idx);
-  };
+  }, [hasAnswered, onSelectOption, onNextQuestion]);
 
   const isUserCorrect = selectedOption === question.correctIndex;
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-3 sm:px-4 py-2 sm:py-3 flex flex-col justify-start">
-      {/* Question Origin & Category Badges */}
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        {question.source === 'supabase' || question.supabaseId !== undefined ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider bg-sky-100 text-sky-950 border-2 border-black rounded-lg shadow-[2px_2px_0_0_#000]">
-            <span>☁️</span>
-            <span>Supabase #{question.supabaseId ?? question.id.replace('sb_', '')}</span>
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-neutral-700 bg-neutral-100 border border-neutral-300 rounded">
-            Galdera #{question.order}
-          </span>
-        )}
-        <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-neutral-100 text-neutral-700 border border-neutral-300 rounded">
-          {question.category}
-        </span>
-        <span className="px-2 py-0.5 text-[10px] font-black text-emerald-800 bg-emerald-100 border border-emerald-300 rounded">
-          {question.level || 'B2'}
-        </span>
+    <div className="w-full max-w-xl mx-auto px-4 py-4 sm:py-6 flex flex-col justify-center animate-in fade-in duration-200">
+      {/* Question Prompt Card */}
+      <div className="w-full bg-white p-5 sm:p-7 rounded-2xl border-4 border-black shadow-[6px_6px_0_0_#000] mb-4">
+        <h2 className="text-xl sm:text-2xl font-black text-neutral-950 leading-relaxed tracking-tight text-center">
+          {question.prompt}
+        </h2>
       </div>
 
-      {/* Question Prompt */}
-      <h2 className="text-lg sm:text-xl md:text-2xl font-black text-neutral-950 leading-snug mb-3 tracking-tight">
-        {question.prompt}
-      </h2>
-
-      {/* 4 Options Grid (2 columns on sm+ screens to eliminate vertical scrolling) */}
-      <div 
-        role="group" 
-        aria-label="Aukerak"
-        className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5 mb-3"
-      >
+      {/* Options Grid (4 large accessible buttons) */}
+      <div className="grid grid-cols-1 gap-2.5 sm:gap-3 mb-4">
         {question.options.map((optionText, idx) => {
           const letter = OPTION_LETTERS[idx];
           const isSelected = selectedOption === idx;
           const isCorrect = idx === question.correctIndex;
 
-          let cardStyle = 'bg-white hover:bg-neutral-50 border-black text-neutral-900 shadow-[3px_3px_0px_0px_#000000]';
-          let badgeStyle = 'bg-white text-neutral-900 border-black';
+          let btnStyle = 'bg-white hover:bg-neutral-50 border-black text-neutral-900 shadow-[3px_3px_0_0_#000] active:translate-x-[1px] active:translate-y-[1px]';
+          let letterStyle = 'bg-neutral-100 text-neutral-900 border-neutral-300';
 
           if (hasAnswered) {
             if (isCorrect) {
-              cardStyle = 'bg-emerald-50 border-emerald-900 text-emerald-950 shadow-[3px_3px_0px_0px_#065f46] ring-2 ring-emerald-500/20';
-              badgeStyle = 'bg-emerald-600 text-white border-emerald-900';
-            } else if (isSelected && !isCorrect) {
-              cardStyle = 'bg-rose-50 border-rose-900 text-rose-950 shadow-[3px_3px_0px_0px_#9f1239]';
-              badgeStyle = 'bg-rose-600 text-white border-rose-900';
+              btnStyle = 'bg-emerald-100 border-emerald-600 text-emerald-950 font-black shadow-[3px_3px_0_0_#059669] ring-2 ring-emerald-500';
+              letterStyle = 'bg-emerald-600 text-white border-emerald-700';
+            } else if (isSelected) {
+              btnStyle = 'bg-rose-100 border-rose-600 text-rose-950 font-black shadow-[3px_3px_0_0_#e11d48] ring-2 ring-rose-500';
+              letterStyle = 'bg-rose-600 text-white border-rose-700';
             } else {
-              cardStyle = 'bg-white/70 border-neutral-300 text-neutral-400 shadow-[1px_1px_0_0_#ccc] opacity-60';
-              badgeStyle = 'bg-neutral-100 text-neutral-400 border-neutral-300';
+              btnStyle = 'bg-neutral-50/70 border-neutral-300 text-neutral-400 opacity-60 shadow-none cursor-default';
+              letterStyle = 'bg-neutral-200 text-neutral-400 border-neutral-300';
             }
           }
 
           return (
             <button
               key={idx}
-              onClick={() => handleOptionClick(idx)}
+              onClick={() => !hasAnswered && onSelectOption(idx)}
               disabled={hasAnswered}
-              id={`question-option-${letter.toLowerCase()}`}
-              aria-pressed={isSelected}
-              className={`w-full flex items-center justify-between p-2.5 sm:p-3 rounded-xl border-2 transition-all text-left min-h-[52px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${cardStyle} ${
-                !hasAnswered ? 'cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_0_#000]' : 'cursor-default'
-              }`}
+              className={`w-full p-4 rounded-xl border-3 text-left transition-all flex items-center justify-between gap-3 cursor-pointer disabled:cursor-default ${btnStyle}`}
             >
-              <div className="flex items-center min-w-0 pr-2">
-                {/* Circle Letter Badge */}
-                <div
-                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 flex items-center justify-center font-black text-xs sm:text-sm mr-2.5 shrink-0 transition-colors ${badgeStyle}`}
-                >
+              <div className="flex items-center gap-3 min-w-0">
+                <span className={`w-8 h-8 rounded-lg border-2 font-black text-sm flex items-center justify-center shrink-0 ${letterStyle}`}>
                   {letter}
-                </div>
-
-                {/* Option Text */}
-                <span className="font-bold text-xs sm:text-sm md:text-base leading-snug break-words">
+                </span>
+                <span className="font-bold text-base sm:text-lg leading-snug">
                   {optionText}
                 </span>
               </div>
 
-              <div className="flex items-center gap-1.5 shrink-0 ml-1.5">
-                {/* Keyboard shortcut hint for desktop */}
-                {!hasAnswered && (
-                  <span className="hidden sm:inline-block px-1.5 py-0.5 text-[9px] font-black text-neutral-400 bg-neutral-100 border border-neutral-200 rounded">
-                    {idx + 1}
-                  </span>
-                )}
-
-                {/* Status Icon */}
-                {hasAnswered && (
-                  <div>
-                    {isCorrect && (
-                      <CheckCircle className="w-5 h-5 text-emerald-600 fill-emerald-100" />
-                    )}
-                    {isSelected && !isCorrect && (
-                      <XCircle className="w-5 h-5 text-rose-600 fill-rose-100" />
-                    )}
-                  </div>
-                )}
-              </div>
+              {hasAnswered && (
+                <div className="shrink-0">
+                  {isCorrect && (
+                    <CheckCircle className="w-6 h-6 text-emerald-600" />
+                  )}
+                  {isSelected && !isCorrect && (
+                    <XCircle className="w-6 h-6 text-rose-600" />
+                  )}
+                </div>
+              )}
             </button>
           );
         })}
       </div>
 
-      {/* Immediate Pedagogical Feedback & Next Button (Egunean Behin consecutive flow) */}
+      {/* Immediate Next Button without any explanation text */}
       {hasAnswered && (
-        <div
-          id="grammar-explanation-card"
-          className={`w-full p-3 sm:p-4 rounded-xl border-2 border-black shadow-[4px_4px_0px_0px_#000000] transition-all animate-in fade-in duration-200 ${
-            isUserCorrect ? 'bg-emerald-50/95' : 'bg-rose-50/95'
-          }`}
-        >
-          {/* Top Feedback Banner & Next Question CTA */}
-          <div className="flex items-center justify-between gap-2 mb-2.5">
-            <div className="flex items-center gap-2 min-w-0">
-              {isUserCorrect ? (
-                <div className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg border-2 border-black shadow-[2px_2px_0_0_#000] text-xs sm:text-sm font-black flex items-center gap-1.5 shrink-0">
-                  <CheckCircle className="w-4 h-4" />
-                  <span>BIKAIN! (+15 XP)</span>
-                </div>
-              ) : (
-                <div className="px-2.5 py-1 bg-rose-600 text-white rounded-lg border-2 border-black shadow-[2px_2px_0_0_#000] text-xs sm:text-sm font-black flex items-center gap-1.5 shrink-0">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>AKATSA!</span>
-                </div>
-              )}
-
-              {!isUserCorrect && onOpenMistakesNotebook && (
-                <span className="hidden sm:inline-block text-[10px] font-black text-rose-800 bg-rose-200/80 px-2 py-0.5 rounded border border-rose-400 truncate">
-                  Akatsen koadernoan gorde da
-                </span>
-              )}
-            </div>
-
-            {/* Direct Consecutive Next Button */}
-            <button
-              onClick={onNextQuestion}
-              id="next-question-btn"
-              className="flex items-center gap-1.5 px-3.5 sm:px-4 py-2 bg-neutral-950 hover:bg-neutral-800 active:translate-x-0.5 active:translate-y-0.5 text-white rounded-lg border-2 border-black shadow-[3px_3px_0_0_#000000] text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
-            >
-              <span>{isLastQuestion ? 'Emaitzak Ikusi' : 'Hurrengo Galdera'}</span>
-              <span className="hidden sm:inline-block px-1 py-0.2 bg-neutral-800 text-[10px] text-neutral-300 rounded border border-neutral-700">
-                ↵
+        <div className="w-full flex items-center justify-between gap-3 pt-2 animate-in fade-in duration-150">
+          <div className="flex items-center gap-2">
+            {isUserCorrect ? (
+              <span className="px-3 py-1.5 bg-emerald-100 text-emerald-900 border-2 border-emerald-500 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5">
+                <CheckCircle className="w-4 h-4 text-emerald-600" />
+                Zuzena!
               </span>
-              <ArrowRight className="w-4 h-4 stroke-[2.5]" />
-            </button>
-          </div>
-
-          {/* Grammar Rule & Tip Box (Compact & zero-scroll) */}
-          <div className="bg-white p-2.5 sm:p-3 rounded-lg border-2 border-black shadow-[2px_2px_0_0_#000] space-y-1.5">
-            <div className="flex items-start gap-1.5">
-              <BookOpen className="w-4 h-4 text-neutral-800 shrink-0 mt-0.5" />
-              <p className="text-xs sm:text-sm font-bold text-neutral-900 leading-snug">
-                <span className="font-black text-neutral-950">Arau Gramatikala: </span>
-                {question.explanation.rule}
-              </p>
-            </div>
-
-            <div className="flex items-start gap-1.5 pt-1 border-t border-neutral-200 text-amber-950">
-              <Lightbulb className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-              <p className="text-[11px] sm:text-xs font-bold text-amber-900 leading-tight">
-                <span className="font-black text-amber-950">Gogoratzeko aholkua: </span>
-                {question.explanation.tip}
-              </p>
-            </div>
-          </div>
-
-          {/* Expandable Deep Details (Toggle to prevent scroll if not requested) */}
-          <div className="mt-2 pt-1.5 flex items-center justify-between">
-            <button
-              onClick={() => setShowDeepDetails(!showDeepDetails)}
-              id="toggle-deep-explanation-btn"
-              className="flex items-center gap-1 text-[11px] font-black text-neutral-700 hover:text-black cursor-pointer underline underline-offset-2"
-            >
-              <span>{showDeepDetails ? 'Itxi xehetasunak' : 'Ikusi zergatik den zuzena eta okerrak'}</span>
-              {showDeepDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-
-            {!isUserCorrect && (
-              <span className="text-[10px] font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-400">
-                Zuzena: «{OPTION_LETTERS[question.correctIndex]}» ({question.options[question.correctIndex]})
+            ) : (
+              <span className="px-3 py-1.5 bg-rose-100 text-rose-900 border-2 border-rose-500 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5">
+                <XCircle className="w-4 h-4 text-rose-600" />
+                Akatsa!
               </span>
             )}
           </div>
 
-          {showDeepDetails && (
-            <div className="mt-2 space-y-2 animate-in fade-in duration-150">
-              <div className="bg-white p-2.5 rounded-lg border border-neutral-300 text-xs text-neutral-800">
-                <span className="font-black text-emerald-700 block mb-0.5">
-                  Zergatik da zuzena «{OPTION_LETTERS[question.correctIndex]}»?
-                </span>
-                <p>{question.explanation.whyCorrect}</p>
-              </div>
-
-              {question.explanation.whyWrongOptions && question.explanation.whyWrongOptions.length > 0 && (
-                <div className="bg-white p-2.5 rounded-lg border border-neutral-300 text-xs text-neutral-700 space-y-1">
-                  <span className="font-black text-rose-700 block mb-0.5">
-                    Zergatik dira okerrak beste aukerak?
-                  </span>
-                  {question.explanation.whyWrongOptions.map((item, i) => (
-                    <div key={i} className="flex items-start gap-1 text-[11px]">
-                      <span className="w-3.5 h-3.5 rounded-full bg-neutral-200 text-neutral-900 font-black text-[9px] flex items-center justify-center shrink-0 mt-0.5">
-                        {item.letter}
-                      </span>
-                      <span>{item.reason}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          <button
+            onClick={onNextQuestion}
+            id="next-question-btn"
+            className="flex items-center gap-2 px-5 py-2.5 bg-neutral-950 hover:bg-neutral-800 text-white rounded-xl border-2 border-black shadow-[3px_3px_0_0_#000] text-sm font-black cursor-pointer active:translate-x-[1px] active:translate-y-[1px] transition-all"
+          >
+            <span>{isLastQuestion ? 'Emaitzak Ikusi' : 'Hurrengoa'}</span>
+            <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+          </button>
         </div>
       )}
     </div>
