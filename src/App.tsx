@@ -16,10 +16,12 @@ import {
   loadPlayerCloudState,
   updatePlayerMistakesInCloud,
   calculateGameScore,
+  calculateQuestionScore,
   calculateStreakFromDates,
   isTeacherAdmin,
   fetchTeacherCycleStartDateCloud,
   PlayerScoreRecord,
+  formatMinutesSeconds,
 } from './services/supabase';
 import { getWeekBlockInfo, WeekBlockInfo } from './utils/weekCycle';
 import {
@@ -120,6 +122,8 @@ export default function App() {
   // Background timer (measured silently during gameplay, only shown on completion)
   const [startTime, setStartTime] = useState<number | null>(null);
   const [finalTimeSeconds, setFinalTimeSeconds] = useState(0);
+  const [questionStartTime, setQuestionStartTime] = useState<number | null>(null);
+  const [questionScores, setQuestionScores] = useState<Record<number, { basePoints: number; speedBonus: number; totalPoints: number }>>({});
 
   // Modals
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
@@ -220,14 +224,27 @@ export default function App() {
   // 4. Reconstruct / sync 20-item review whenever todayQuestions or lastGameMistakes changes
   useEffect(() => {
     if (todayQuestions.length > 0) {
-      const items = buildReviewItems(
-        todayQuestions,
-        state.dailyProgress?.answers || {},
-        lastGameMistakes
-      );
-      setTodayReviewItems(items);
+      const pName = studentName.toLowerCase().trim();
+      let cachedReview: QuestionReviewItem[] | null = null;
+      try {
+        const raw = localStorage.getItem(`mintzakats_review_${pName}_${todayDateStr}`);
+        if (raw) {
+          cachedReview = JSON.parse(raw);
+        }
+      } catch {}
+
+      if (cachedReview && cachedReview.length === todayQuestions.length) {
+        setTodayReviewItems(cachedReview);
+      } else {
+        const items = buildReviewItems(
+          todayQuestions,
+          state.dailyProgress?.answers || {},
+          lastGameMistakes
+        );
+        setTodayReviewItems(items);
+      }
     }
-  }, [todayQuestions, lastGameMistakes]);
+  }, [todayQuestions, lastGameMistakes, studentName, todayDateStr]);
 
   const totalQuestionsCount = todayQuestions.length || 20;
   const currentQuestion = todayQuestions[state.currentQuestionIndex] || todayQuestions[0];
@@ -271,6 +288,8 @@ export default function App() {
 
     setLastGameMistakes([]);
     setTodayReviewItems([]);
+    setQuestionScores({});
+    setQuestionStartTime(null);
 
     setState(prev => ({
       ...prev,
@@ -288,7 +307,10 @@ export default function App() {
 
   // Countdown completed: start background timer and show first question
   const handleCountdownFinished = () => {
-    setStartTime(Date.now());
+    const now = Date.now();
+    setStartTime(now);
+    setQuestionStartTime(now);
+    setQuestionScores({});
     setViewMode('playing');
   };
 
@@ -297,6 +319,14 @@ export default function App() {
     if (hasAnsweredCurrent) return;
 
     const isCorrect = optionIndex === currentQuestion.correctIndex;
+    const responseTimeMs = questionStartTime ? Math.max(0, Date.now() - questionStartTime) : 0;
+    const qScore = calculateQuestionScore(isCorrect, responseTimeMs);
+
+    setQuestionScores(prev => ({
+      ...prev,
+      [state.currentQuestionIndex]: qScore,
+    }));
+
     if (isCorrect) {
       playCorrectSound();
     } else {
@@ -332,6 +362,7 @@ export default function App() {
   // Next question
   const handleNextQuestion = async () => {
     if (state.currentQuestionIndex < totalQuestionsCount - 1) {
+      setQuestionStartTime(Date.now());
       setState(prev => ({
         ...prev,
         currentQuestionIndex: prev.currentQuestionIndex + 1,
@@ -342,8 +373,22 @@ export default function App() {
       setFinalTimeSeconds(elapsed);
       const finalCorrect = dailyProgress.score || 0;
 
-      // 1. Calculate points with speed bonus
-      const scoreDetails = calculateGameScore(finalCorrect, elapsed, totalQuestionsCount);
+      // 1. Calculate points with per-question speed bonus
+      const allQuestionScores = Object.values(questionScores);
+      let scoreDetails: { basePoints: number; speedBonus: number; totalPoints: number; secondsSaved: number };
+
+      if (allQuestionScores.length === totalQuestionsCount) {
+        const basePoints = allQuestionScores.reduce((acc, q) => acc + q.basePoints, 0);
+        const speedBonus = allQuestionScores.reduce((acc, q) => acc + q.speedBonus, 0);
+        scoreDetails = {
+          basePoints,
+          speedBonus,
+          totalPoints: basePoints + speedBonus,
+          secondsSaved: speedBonus,
+        };
+      } else {
+        scoreDetails = calculateGameScore(finalCorrect, elapsed, totalQuestionsCount);
+      }
 
       // 2. Calculate mathematically sound streak:
       const updatedDates = Array.from(new Set([...playerCompletedDates, todayDateStr]));
@@ -363,6 +408,10 @@ export default function App() {
         };
       });
       setTodayReviewItems(reviewItems);
+
+      try {
+        localStorage.setItem(`mintzakats_review_${studentName.toLowerCase().trim()}_${todayDateStr}`, JSON.stringify(reviewItems));
+      } catch {}
 
       // 4. Create official score record with total points and correct count
       const gameRecord: PlayerScoreRecord = {
@@ -392,12 +441,9 @@ export default function App() {
     }
   };
 
-  // Cleaned mistakes callback from GameReviewModal
-  const handleUpdateReviewItems = async (updated: QuestionReviewItem[]) => {
+  // Review items callback (retained for backward compatibility)
+  const handleUpdateReviewItems = (updated: QuestionReviewItem[]) => {
     setTodayReviewItems(updated);
-    const stillPending = updated.filter(u => !u.isCorrect && !u.isCleaned);
-    setLastGameMistakes(stillPending);
-    await updatePlayerMistakesInCloud(studentName, updated);
   };
 
   // Cycle start date changed by teacher
@@ -411,8 +457,8 @@ export default function App() {
     }
   };
 
-  // Count pending mistakes (uncleaned)
-  const pendingMistakesCount = todayReviewItems.filter(u => !u.isCorrect && !u.isCleaned).length;
+  // Count mistakes from official game
+  const pendingMistakesCount = todayReviewItems.filter(u => !u.isCorrect).length;
 
   // Loading spinner
   if (isAuthChecking) {
@@ -485,6 +531,7 @@ export default function App() {
               studentName={studentName}
               studentEmail={currentStudentEmail}
               streak={playerStreak}
+              cycleStartDateStr={blockInfo.weekMondayDateStr}
             />
           )}
 
@@ -503,7 +550,14 @@ export default function App() {
   // View 4: Completed Quiz Summary (With speed bonus breakdown & accurate streak)
   if (viewMode === 'completed') {
     const finalCorrect = dailyProgress.score || 0;
-    const scoreDetails = calculateGameScore(finalCorrect, finalTimeSeconds, totalQuestionsCount);
+    const scoreDetails = todayRecord
+      ? {
+          basePoints: finalCorrect * 40,
+          speedBonus: todayRecord.speedBonus,
+          totalPoints: todayRecord.score,
+          secondsSaved: todayRecord.speedBonus,
+        }
+      : calculateGameScore(finalCorrect, finalTimeSeconds, totalQuestionsCount);
 
     return (
       <div className="min-h-screen bg-[#F8F9FA] text-neutral-900 flex flex-col selection:bg-yellow-300 selection:text-black">
@@ -549,12 +603,16 @@ export default function App() {
                 </span>
               </div>
               <div className="mt-2 pt-2 border-t border-yellow-300/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center gap-2 flex-wrap">
-                <span>🎯 Oinarria: {scoreDetails.basePoints} pt ({finalCorrect} × 10 pt)</span>
-                <span>•</span>
-                <span className="text-emerald-800 font-black flex items-center gap-0.5">
-                  <Zap className="w-3 h-3 fill-emerald-600 text-emerald-600" />
-                  Bizkortasuna: +{scoreDetails.speedBonus} pt ({scoreDetails.secondsSaved}s × 25 pt)
-                </span>
+                <span>🎯 Oinarria: {scoreDetails.basePoints} pt ({finalCorrect} × 40 pt)</span>
+                {scoreDetails.speedBonus > 0 && (
+                  <>
+                    <span>•</span>
+                    <span className="text-emerald-800 font-black flex items-center gap-0.5">
+                      <Zap className="w-3 h-3 fill-emerald-600 text-emerald-600" />
+                      Bizkortasun bonusa: +{scoreDetails.speedBonus} pt
+                    </span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -574,13 +632,13 @@ export default function App() {
                   Denbora
                 </span>
                 <span className="text-lg sm:text-xl font-black text-sky-950 mt-0.5 block">
-                  {finalTimeSeconds.toFixed(1)}s
+                  {formatMinutesSeconds(finalTimeSeconds)}
                 </span>
               </div>
 
               <div className="p-3 bg-orange-50 border-2 border-black rounded-xl text-center shadow-[2px_2px_0_0_#000]">
                 <span className="text-[10px] font-black uppercase text-orange-800 block">
-                  Racha
+                  Bolada
                 </span>
                 <div className="flex items-center justify-center gap-0.5 text-lg sm:text-xl font-black text-orange-600 mt-0.5">
                   <Flame className="w-4 h-4 fill-orange-500 text-orange-500" />
@@ -712,6 +770,7 @@ export default function App() {
           onSelectOption={handleSelectOption}
           onNextQuestion={handleNextQuestion}
           isLastQuestion={state.currentQuestionIndex >= totalQuestionsCount - 1}
+          earnedScore={hasAnsweredCurrent ? questionScores[state.currentQuestionIndex] : undefined}
         />
       </main>
 

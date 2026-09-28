@@ -9,6 +9,11 @@ interface QuestionCardProps {
   onSelectOption: (optionIndex: number) => void;
   onNextQuestion: () => void;
   isLastQuestion: boolean;
+  earnedScore?: {
+    basePoints: number;
+    speedBonus: number;
+    totalPoints: number;
+  };
 }
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'] as const;
@@ -20,6 +25,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
   onSelectOption,
   onNextQuestion,
   isLastQuestion,
+  earnedScore,
 }) => {
   // Keyboard navigation for desktop efficiency (1-4, A-D, Enter/Space for next)
   useEffect(() => {
@@ -129,14 +135,19 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
         <div className="w-full flex items-center justify-between gap-3 pt-2 animate-in fade-in duration-150">
           <div className="flex items-center gap-2">
             {isUserCorrect ? (
-              <span className="px-3 py-1.5 bg-emerald-100 text-emerald-900 border-2 border-emerald-500 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5">
+              <span className="px-3 py-1.5 bg-emerald-100 text-emerald-900 border-2 border-emerald-500 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-[1px_1px_0_0_#000]">
                 <CheckCircle className="w-4 h-4 text-emerald-600" />
-                Zuzena!
+                <span>Zuzena!</span>
+                {earnedScore && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-emerald-200 text-emerald-950 rounded text-xs font-black">
+                    +{earnedScore.totalPoints} pt{earnedScore.speedBonus > 0 ? ` (⚡+${earnedScore.speedBonus})` : ''}
+                  </span>
+                )}
               </span>
             ) : (
-              <span className="px-3 py-1.5 bg-rose-100 text-rose-900 border-2 border-rose-500 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5">
+              <span className="px-3 py-1.5 bg-rose-100 text-rose-900 border-2 border-rose-500 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 shadow-[1px_1px_0_0_#000]">
                 <XCircle className="w-4 h-4 text-rose-600" />
-                Akatsa!
+                <span>Akatsa! (0 pt)</span>
               </span>
             )}
           </div>

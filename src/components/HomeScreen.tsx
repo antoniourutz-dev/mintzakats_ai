@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Play,
   Trophy,
@@ -10,7 +10,11 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { WeekBlockInfo } from '../utils/weekCycle';
-import { PlayerScoreRecord } from '../services/supabase';
+import { PlayerScoreRecord, formatMinutesSeconds } from '../services/supabase';
+import { GrammarLesson } from '../types';
+import { getTodayDailyGrammarLesson } from '../services/grammarService';
+import { DailyGrammarCard } from './DailyGrammarCard';
+import { DailyGrammarModal } from './DailyGrammarModal';
 
 interface HomeScreenProps {
   studentEmail: string;
@@ -46,6 +50,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onLogout,
 }) => {
   const isGameLocked = isAdmin ? false : hasStartedOrPlayedToday;
+
+  // Eguneko Gramatika state
+  const [dailyLesson, setDailyLesson] = useState<GrammarLesson | null>(null);
+  const [isLoadingLesson, setIsLoadingLesson] = useState<boolean>(true);
+  const [isGrammarModalOpen, setIsGrammarModalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoadingLesson(true);
+
+    getTodayDailyGrammarLesson()
+      .then(lesson => {
+        if (isMounted) {
+          setDailyLesson(lesson);
+          setIsLoadingLesson(false);
+        }
+      })
+      .catch(err => {
+        console.warn('Errorea Eguneko Gramatika kargatzean:', err);
+        if (isMounted) {
+          setDailyLesson(null);
+          setIsLoadingLesson(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-neutral-900 flex flex-col selection:bg-yellow-300 selection:text-black">
@@ -179,7 +212,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </span>
                 ) : todayResult ? (
                   <span className="text-xs font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300">
-                    {todayResult.correctAnswers ?? (todayResult.score <= 20 ? todayResult.score : Math.floor(todayResult.score / 100))}/20 · {todayResult.score} pt · {todayResult.timeSeconds.toFixed(1)}s
+                    🎯 {todayResult.correctAnswers ?? (todayResult.score <= 20 ? todayResult.score : Math.round(todayResult.score / 10))}/20 zuzen · {todayResult.score} pt · ⏱️ {formatMinutesSeconds(todayResult.timeSeconds)}
                   </span>
                 ) : isGameLocked ? (
                   <span className="text-xs font-black text-neutral-500 flex items-center gap-1">
@@ -216,6 +249,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <Trophy className="w-7 h-7 text-yellow-600 fill-yellow-500" />
             </div>
           </button>
+
+          {/* OPTION 3: EGUNEKO GRAMATIKA */}
+          {dailyLesson ? (
+            <DailyGrammarCard
+              lesson={dailyLesson}
+              onClick={() => setIsGrammarModalOpen(true)}
+            />
+          ) : isLoadingLesson ? (
+            <div className="w-full h-14 rounded-xl border-3 border-neutral-200 bg-neutral-100/60 animate-pulse" />
+          ) : null}
         </div>
 
         {/* Bottom Status / Extra Actions */}
@@ -252,6 +295,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           )}
         </div>
       </main>
+
+      {/* Daily Grammar Modal */}
+      <DailyGrammarModal
+        isOpen={isGrammarModalOpen}
+        onClose={() => setIsGrammarModalOpen(false)}
+        lesson={dailyLesson}
+      />
     </div>
   );
 };

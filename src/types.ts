@@ -84,3 +84,35 @@ export interface LeaderboardEntry {
   rank?: number;
   badge?: string;
 }
+
+export interface GrammarExample {
+  text: string;
+  type?: string;
+}
+
+export interface GrammarLesson {
+  id: string;
+  concept_key: string;
+  title: string;
+  subtitle: string;
+  category?: string | null;
+  level?: string | null;
+  summary: string;
+  explanation: string;
+  pattern?: string | null;
+  key_point?: string | null;
+  examples: GrammarExample[] | null;
+  source_question_ids?: string[] | null;
+  status: 'draft' | 'published' | 'archived';
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface DailyGrammarSchedule {
+  id: string;
+  lesson_id: string;
+  scheduled_date: string; // YYYY-MM-DD
+  is_active: boolean;
+  created_at?: string;
+  grammar_lessons?: GrammarLesson | null;
+}

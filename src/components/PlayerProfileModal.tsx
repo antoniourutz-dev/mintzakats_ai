@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Flame, Clock, Calendar, CheckCircle2, TrendingUp, Award, User, Zap } from 'lucide-react';
-import { PlayerScoreRecord, fetchPlayerRecent7DaysHistory } from '../services/supabase';
+import { PlayerScoreRecord, fetchPlayerRecent7DaysHistory, formatMinutesSeconds } from '../services/supabase';
 
 interface PlayerProfileModalProps {
   isOpen: boolean;
@@ -8,6 +8,7 @@ interface PlayerProfileModalProps {
   studentName: string;
   studentEmail: string;
   streak: number;
+  cycleStartDateStr?: string;
 }
 
 const BASQUE_MONTHS = [
@@ -38,6 +39,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   studentName,
   studentEmail,
   streak,
+  cycleStartDateStr,
 }) => {
   const [history, setHistory] = useState<PlayerScoreRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,7 +50,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
     let isMounted = true;
     setIsLoading(true);
 
-    fetchPlayerRecent7DaysHistory(studentName)
+    fetchPlayerRecent7DaysHistory(studentName, cycleStartDateStr)
       .then(records => {
         if (isMounted) {
           setHistory(records);
@@ -62,11 +64,11 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, studentName]);
+  }, [isOpen, studentName, cycleStartDateStr]);
 
   if (!isOpen) return null;
 
-  // Compute stats
+  // Compute stats strictly from current cycle
   const totalGames = history.length;
   const avgScore =
     totalGames > 0
@@ -108,10 +110,10 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
         {/* 4 Summary Cards */}
         <div className="p-4 bg-neutral-50 border-b-2 border-black shrink-0">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {/* Streak */}
+            {/* Bolada (maintained globally) */}
             <div className="p-2.5 bg-white border-2 border-black rounded-xl shadow-[2px_2px_0_0_#000] text-center">
               <span className="text-[10px] font-black uppercase text-neutral-500 block">
-                Racha
+                Bolada
               </span>
               <div className="flex items-center justify-center gap-1 text-base font-black text-orange-600 mt-0.5">
                 <Flame className="w-4 h-4 fill-orange-500" />
@@ -119,10 +121,10 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               </div>
             </div>
 
-            {/* Played in last 7 days */}
+            {/* Played in current cycle */}
             <div className="p-2.5 bg-white border-2 border-black rounded-xl shadow-[2px_2px_0_0_#000] text-center">
               <span className="text-[10px] font-black uppercase text-neutral-500 block">
-                Azken 7 Egunak
+                Zikloko Egunak
               </span>
               <div className="flex items-center justify-center gap-1 text-base font-black text-neutral-900 mt-0.5">
                 <Calendar className="w-4 h-4 text-emerald-600" />
@@ -130,7 +132,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               </div>
             </div>
 
-            {/* Avg Score */}
+            {/* Avg Score in current cycle */}
             <div className="p-2.5 bg-white border-2 border-black rounded-xl shadow-[2px_2px_0_0_#000] text-center">
               <span className="text-[10px] font-black uppercase text-neutral-500 block">
                 Batez Bestekoa
@@ -141,7 +143,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               </div>
             </div>
 
-            {/* Best Score */}
+            {/* Best Score in current cycle */}
             <div className="p-2.5 bg-white border-2 border-black rounded-xl shadow-[2px_2px_0_0_#000] text-center">
               <span className="text-[10px] font-black uppercase text-neutral-500 block">
                 Puntuazio Onena
@@ -157,7 +159,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
         {/* Section Title */}
         <div className="px-4 pt-3 pb-1 flex items-center justify-between">
           <h3 className="text-sm font-black text-neutral-950 flex items-center gap-1.5 uppercase tracking-wide">
-            <span>Partiden Historiala (Azken 7 Egunak)</span>
+            <span>Partiden Historiala (Ziklo Honetan)</span>
           </h3>
           {totalGames > 0 && (
             <span className="text-xs font-bold text-neutral-500">
@@ -177,7 +179,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             <div className="py-12 text-center bg-neutral-50 rounded-2xl border-2 border-dashed border-neutral-300 p-6">
               <Calendar className="w-10 h-10 text-neutral-400 mx-auto mb-2" />
               <p className="text-sm font-black text-neutral-800">
-                Ez dago oraindik partidarik azken 7 egunetan
+                Ez dago oraindik partidarik ziklo honetan
               </p>
               <p className="text-xs font-bold text-neutral-500 mt-1">
                 Jokatu gaurko partida zure bilakaera hemen ikusteko!
@@ -185,7 +187,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             </div>
           ) : (
             history.map((record) => {
-              const correct = record.correctAnswers ?? (record.score <= 20 ? record.score : Math.floor(record.score / 100));
+              const correct = record.correctAnswers ?? (record.score <= 20 ? record.score : Math.round(record.score / 10));
               const scorePercent = Math.round((correct / record.totalQuestions) * 100);
               const isExcellent = correct >= 18;
               const isGood = correct >= 14 && correct < 18;
@@ -210,7 +212,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                           <span>•</span>
                           <span className="flex items-center gap-0.5">
                             <Clock className="w-3 h-3" />
-                            {record.timeSeconds.toFixed(1)}s
+                            {formatMinutesSeconds(record.timeSeconds)}
                           </span>
                           {record.speedBonus > 0 && (
                             <>

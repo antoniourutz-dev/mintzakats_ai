@@ -6,6 +6,7 @@ import {
   getDailyLeaderboardCloud,
   getWeeklyLeaderboardCloud,
   isTeacherAdmin,
+  formatMinutesSeconds,
 } from '../services/supabase';
 
 interface LeaderboardModalProps {
@@ -176,7 +177,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                           )}
                         </div>
                         <span className="text-[11px] font-bold text-neutral-500">
-                          ⏱️ {player.timeSeconds.toFixed(1)}s · {player.correctAnswers ?? (player.score <= 20 ? player.score : Math.floor(player.score / 100))}/{player.totalQuestions}
+                          ⏱️ {formatMinutesSeconds(player.timeSeconds)} · 🎯 {player.correctAnswers}/{player.totalQuestions} zuzen
                         </span>
                       </div>
                     </div>

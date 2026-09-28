@@ -3,14 +3,13 @@ import {
   X,
   CheckCircle,
   XCircle,
-  Sparkles,
   BookOpen,
   ArrowRight,
   ArrowLeft,
   RotateCcw,
-  CheckCircle2,
-  Info,
+  Play,
   HelpCircle,
+  Sparkles,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Question } from '../types';
@@ -21,7 +20,7 @@ export interface QuestionReviewItem {
   question: Question;
   userAnswerIndex: number; // 0..3 (-1 if skipped)
   isCorrect: boolean;
-  isCleaned?: boolean;
+  isCleaned?: boolean; // kept optional for backwards compatibility
 }
 
 interface GameReviewModalProps {
@@ -37,48 +36,49 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
   isOpen,
   onClose,
   reviewItems,
-  onUpdateReviewItems,
 }) => {
   const [filter, setFilter] = useState<'all' | 'mistakes' | 'correct'>('all');
-  const [isPracticeMode, setIsPracticeMode] = useState(false);
+  const [practiceType, setPracticeType] = useState<'none' | 'mistakes' | 'full'>('none');
   const [practiceIndex, setPracticeIndex] = useState(0);
   const [practiceSelectedOption, setPracticeSelectedOption] = useState<number | null>(null);
   const [practiceHasAnswered, setPracticeHasAnswered] = useState(false);
+  const [practiceCorrectCount, setPracticeCorrectCount] = useState(0);
   const [practiceFinished, setPracticeFinished] = useState(false);
   const [expandedExplanations, setExpandedExplanations] = useState<Record<number, boolean>>({});
 
-  // Local state of review items (allows marking mistakes as cleaned)
-  const [items, setItems] = useState<QuestionReviewItem[]>(reviewItems);
-
-  // Sync if props change
-  React.useEffect(() => {
-    setItems(reviewItems);
-  }, [reviewItems]);
-
   if (!isOpen) return null;
 
-  // Filtered lists
-  const mistakes = items.filter(item => !item.isCorrect && !item.isCleaned);
-  const allMistakesHistory = items.filter(item => !item.isCorrect);
-  const correctItems = items.filter(item => item.isCorrect);
+  // Mistakes and Correct filters from the original game
+  const mistakes = reviewItems.filter(item => !item.isCorrect);
+  const correctItems = reviewItems.filter(item => item.isCorrect);
 
   const displayedItems =
     filter === 'mistakes'
-      ? allMistakesHistory
+      ? mistakes
       : filter === 'correct'
       ? correctItems
-      : items;
+      : reviewItems;
 
-  // Practice items: focus on uncleaned mistakes (or all mistakes if all already cleaned)
-  const practiceList = mistakes.length > 0 ? mistakes : allMistakesHistory;
+  // Active practice list based on practiceType
+  const practiceList =
+    practiceType === 'mistakes'
+      ? mistakes
+      : practiceType === 'full'
+      ? reviewItems
+      : [];
+
   const currentPracticeItem = practiceList[practiceIndex];
 
-  const handleStartPractice = () => {
-    if (practiceList.length === 0) return;
-    setIsPracticeMode(true);
+  // Start practice session (either mistakes only or full game)
+  const handleStartPractice = (type: 'mistakes' | 'full') => {
+    const list = type === 'mistakes' ? mistakes : reviewItems;
+    if (list.length === 0) return;
+
+    setPracticeType(type);
     setPracticeIndex(0);
     setPracticeSelectedOption(null);
     setPracticeHasAnswered(false);
+    setPracticeCorrectCount(0);
     setPracticeFinished(false);
   };
 
@@ -91,15 +91,7 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
     const isCorrect = idx === currentPracticeItem.question.correctIndex;
     if (isCorrect) {
       playCorrectSound();
-      // Mark as cleaned!
-      const updated = items.map(it => {
-        if (it.question.id === currentPracticeItem.question.id) {
-          return { ...it, isCleaned: true };
-        }
-        return it;
-      });
-      setItems(updated);
-      onUpdateReviewItems?.(updated);
+      setPracticeCorrectCount(prev => prev + 1);
     } else {
       playWrongSound();
     }
@@ -111,7 +103,7 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
       setPracticeSelectedOption(null);
       setPracticeHasAnswered(false);
     } else {
-      // Completed practice!
+      // Completed practice
       setPracticeFinished(true);
       try {
         confetti({
@@ -130,6 +122,8 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
     }));
   };
 
+  const isPracticeActive = practiceType !== 'none';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs select-none animate-in fade-in duration-150">
       <div className="w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl border-4 border-black shadow-[8px_8px_0_0_#000] flex flex-col overflow-hidden">
@@ -141,12 +135,16 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
             </div>
             <div>
               <h2 className="text-xl font-black text-neutral-950 leading-tight">
-                {isPracticeMode ? 'Akatsak Garbitu (Praktika)' : 'Partida Berrikusi'}
+                {isPracticeActive
+                  ? practiceType === 'mistakes'
+                    ? 'Hutsak Praktikatu'
+                    : 'Partida Osoa Praktikatu'
+                  : 'Partida Berrikusi'}
               </h2>
               <p className="text-xs font-bold text-neutral-800">
-                {isPracticeMode
-                  ? 'Erantzun berriz huts egindako galderak kontzeptuak finkatzeko'
-                  : 'Gaurko 20 galderak: egiaztatu asmatutakoak eta garbitu akatsak'}
+                {isPracticeActive
+                  ? 'Entrenamendu modua (ez du lehiaketako puntuazioa aldatzen)'
+                  : 'Gaurko 20 galderak, zure erantzunak eta azalpen pedagogikoak'}
               </p>
             </div>
           </div>
@@ -161,46 +159,62 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
         </div>
 
         {/* Practice Mode Active */}
-        {isPracticeMode ? (
+        {isPracticeActive ? (
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col justify-between">
             {practiceFinished ? (
               <div className="py-10 text-center my-auto">
-                <div className="w-16 h-16 bg-emerald-100 border-3 border-black rounded-2xl mx-auto flex items-center justify-center text-3xl mb-3 shadow-[3px_3px_0_0_#000]">
-                  ✨
+                <div className="w-16 h-16 bg-yellow-200 border-3 border-black rounded-2xl mx-auto flex items-center justify-center text-3xl mb-3 shadow-[3px_3px_0_0_#000]">
+                  🎯
                 </div>
-                <h3 className="text-2xl font-black text-neutral-950 mb-2">
-                  Akatsak Garbituta!
+                <h3 className="text-2xl font-black text-neutral-950 mb-1">
+                  Praktika Amaituta!
                 </h3>
-                <p className="text-sm font-bold text-neutral-600 max-w-sm mx-auto mb-6">
-                  Bikain! Huts egindako galderak landu eta arau gramatikalak argitu dituzu.
+                <p className="text-base font-black text-emerald-800 mb-2">
+                  {practiceCorrectCount} / {practiceList.length} asmatuta entrenamendu honetan
                 </p>
-                <button
-                  onClick={() => setIsPracticeMode(false)}
-                  className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-white font-black text-sm rounded-xl border-2 border-black shadow-[3px_3px_0_0_#000] cursor-pointer"
-                >
-                  Itzuli Partidaren Zerrendara
-                </button>
+                <p className="text-xs font-bold text-neutral-600 max-w-sm mx-auto mb-6">
+                  Gogoratu: praktika honek kontzeptuak finkatzeko balio du eta ez du zure lehiaketako puntuazio ofiziala aldatu.
+                </p>
+
+                <div className="flex items-center justify-center gap-3 flex-wrap">
+                  <button
+                    onClick={() => handleStartPractice(practiceType)}
+                    className="px-4 py-2 bg-yellow-300 hover:bg-yellow-200 text-neutral-950 font-black text-xs sm:text-sm rounded-xl border-2 border-black shadow-[2px_2px_0_0_#000] cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Berriro Praktikatu</span>
+                  </button>
+
+                  <button
+                    onClick={() => setPracticeType('none')}
+                    className="px-4 py-2 bg-neutral-950 hover:bg-neutral-800 text-white font-black text-xs sm:text-sm rounded-xl border-2 border-black shadow-[2px_2px_0_0_#000] cursor-pointer"
+                  >
+                    Itzuli Zerrendara
+                  </button>
+                </div>
               </div>
             ) : currentPracticeItem ? (
               <div className="space-y-4">
-                {/* Practice Top Progress */}
-                <div className="flex items-center justify-between">
+                {/* Practice Top Progress & Badge */}
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <button
-                    onClick={() => setIsPracticeMode(false)}
+                    onClick={() => setPracticeType('none')}
                     className="inline-flex items-center gap-1 text-xs font-bold text-neutral-600 hover:text-black cursor-pointer"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Zerrendara</span>
+                    <span>Zerrendara itzuli</span>
                   </button>
 
-                  <span className="text-xs font-black text-neutral-500 bg-neutral-100 px-2.5 py-1 rounded-lg border border-neutral-300">
-                    Galdera {practiceIndex + 1} / {practiceList.length}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-neutral-700 bg-neutral-100 px-2.5 py-1 rounded-lg border border-neutral-300">
+                      Galdera {practiceIndex + 1} / {practiceList.length}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Question Prompt */}
                 <div className="p-4 bg-neutral-50 rounded-2xl border-2 border-black shadow-[3px_3px_0_0_#000]">
-                  <span className="text-[10px] font-black uppercase text-neutral-400 block mb-1">
+                  <span className="text-[10px] font-black uppercase text-neutral-500 block mb-1">
                     {currentPracticeItem.question.category || 'Mistoa'}
                   </span>
                   <h3 className="text-base sm:text-lg font-black text-neutral-950 leading-snug">
@@ -219,7 +233,7 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
                       if (isCorrect) {
                         btnStyle = 'bg-emerald-100 border-emerald-600 text-emerald-950';
                       } else if (isSelected) {
-                        btnStyle = 'bg-rose-100 border-rose-600 text-rose-950';
+                        btnStyle = 'bg-rose-100 border-rose-500 text-rose-950 line-through';
                       } else {
                         btnStyle = 'bg-neutral-50 border-neutral-300 text-neutral-400';
                       }
@@ -230,19 +244,19 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
                         key={optIdx}
                         onClick={() => handlePracticeSelectOption(optIdx)}
                         disabled={practiceHasAnswered}
-                        className={`w-full p-3.5 rounded-xl border-2 font-bold text-sm text-left flex items-center justify-between transition-all ${btnStyle} ${
-                          !practiceHasAnswered ? 'cursor-pointer active:translate-y-[1px]' : ''
+                        className={`w-full p-3 rounded-xl border-2 font-bold text-sm text-left flex items-center justify-between gap-3 transition-colors ${btnStyle} ${
+                          !practiceHasAnswered ? 'cursor-pointer hover:border-black active:translate-x-[1px]' : ''
                         }`}
                       >
                         <div className="flex items-center gap-2.5">
-                          <span className="w-6 h-6 rounded-md bg-neutral-200 border border-black/30 font-black text-xs flex items-center justify-center shrink-0">
+                          <span className="w-6 h-6 rounded-lg bg-neutral-100 border border-black font-black text-xs flex items-center justify-center shrink-0">
                             {OPTION_LETTERS[optIdx]}
                           </span>
-                          <span>{opt}</span>
+                          <span className="leading-snug">{opt}</span>
                         </div>
 
                         {practiceHasAnswered && isCorrect && (
-                          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                          <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
                         )}
                         {practiceHasAnswered && isSelected && !isCorrect && (
                           <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
@@ -252,17 +266,21 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
                   })}
                 </div>
 
-                {/* Explanation Card upon answering */}
+                {/* Immediate Explanation in Practice Mode */}
                 {practiceHasAnswered && (
-                  <div className="p-3.5 bg-sky-50 border-2 border-sky-400 rounded-xl space-y-1.5 animate-in fade-in duration-150">
-                    <span className="text-[10px] font-black uppercase text-sky-800 flex items-center gap-1">
-                      <Info className="w-3.5 h-3.5" />
-                      Azalpen Pedagogikoa
+                  <div className="p-3.5 bg-sky-50 border-2 border-sky-300 rounded-xl space-y-1 animate-in fade-in duration-150">
+                    <span className="text-[10px] font-black uppercase text-sky-800 block">
+                      Arau Gramatikala & Azalpena
                     </span>
                     <p className="text-xs font-bold text-sky-950">
                       {currentPracticeItem.question.explanation?.whyCorrect ||
-                        `"${currentPracticeItem.question.options[currentPracticeItem.question.correctIndex]}" da forma zuzena.`}
+                        `"${currentPracticeItem.question.options[currentPracticeItem.question.correctIndex]}" da euskara batuaren arauen arabera aukera zuzena.`}
                     </p>
+                    {currentPracticeItem.question.explanation?.tip && (
+                      <p className="text-[11px] font-medium text-sky-800 pt-0.5">
+                        💡 Aholkua: {currentPracticeItem.question.explanation.tip}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -271,7 +289,7 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
                   <div className="pt-2 flex justify-end">
                     <button
                       onClick={handlePracticeNext}
-                      className="px-5 py-2.5 bg-yellow-300 hover:bg-yellow-200 text-neutral-950 font-black text-sm rounded-xl border-2 border-black shadow-[3px_3px_0_0_#000] flex items-center gap-2 cursor-pointer"
+                      className="px-5 py-2.5 bg-yellow-300 hover:bg-yellow-200 text-neutral-950 font-black text-sm rounded-xl border-2 border-black shadow-[3px_3px_0_0_#000] flex items-center gap-2 cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
                     >
                       <span>
                         {practiceIndex < practiceList.length - 1 ? 'Hurrengoa' : 'Amaitu'}
@@ -284,9 +302,9 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
             ) : null}
           </div>
         ) : (
-          /* Review List Mode */
+          /* Review List Mode (No "Akatsak Garbitu" mutation - pure pedagogical review) */
           <>
-            {/* Top Toolbar: Filters and Practice CTA */}
+            {/* Top Toolbar: Filters and 2 Practice Modes */}
             <div className="p-3 bg-neutral-100 border-b-2 border-black flex items-center justify-between gap-2 flex-wrap shrink-0">
               {/* Filter Tabs */}
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -298,7 +316,7 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
                       : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
                   }`}
                 >
-                  Guztiak ({items.length})
+                  Guztiak ({reviewItems.length})
                 </button>
 
                 <button
@@ -309,7 +327,7 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
                       : 'bg-white text-rose-700 border-neutral-300 hover:bg-rose-50'
                   }`}
                 >
-                  Akatsak ({allMistakesHistory.length})
+                  Akatsak ({mistakes.length})
                 </button>
 
                 <button
@@ -324,16 +342,28 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
                 </button>
               </div>
 
-              {/* Practice CTA Button */}
-              {allMistakesHistory.length > 0 && (
+              {/* 2 Practice Action Buttons (No points, purely educational) */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {mistakes.length > 0 && (
+                  <button
+                    onClick={() => handleStartPractice('mistakes')}
+                    title="Praktikatu bakarrik huts egindako galderak puntuaziorik gabe"
+                    className="px-3 py-1.5 bg-yellow-300 hover:bg-yellow-200 text-neutral-950 border-2 border-black rounded-lg font-black text-xs shadow-[2px_2px_0_0_#000] flex items-center gap-1.5 cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Hutsak Praktikatu ({mistakes.length})</span>
+                  </button>
+                )}
+
                 <button
-                  onClick={handleStartPractice}
-                  className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-white border-2 border-black rounded-lg font-black text-xs shadow-[2px_2px_0_0_#000] flex items-center gap-1.5 cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
+                  onClick={() => handleStartPractice('full')}
+                  title="Praktikatu gaurko partida osoa puntuaziorik gabe"
+                  className="px-3 py-1.5 bg-white hover:bg-neutral-100 text-neutral-900 border-2 border-black rounded-lg font-black text-xs shadow-[2px_2px_0_0_#000] flex items-center gap-1.5 cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Akatsak Garbitu</span>
+                  <Play className="w-3.5 h-3.5 fill-current text-emerald-600" />
+                  <span>Partida Osoa Praktikatu</span>
                 </button>
-              )}
+              </div>
             </div>
 
             {/* List of 20 Questions */}
@@ -348,18 +378,13 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
                   const userIdx = item.userAnswerIndex;
                   const correctIdx = q.correctIndex;
                   const isInitiallyCorrect = item.isCorrect;
-                  const isCleaned = item.isCleaned;
                   const isExpanded = Boolean(expandedExplanations[idx]);
 
                   return (
                     <div
                       key={q.id || idx}
                       className={`p-4 rounded-xl border-2 border-black shadow-[3px_3px_0_0_#000] space-y-3 ${
-                        isInitiallyCorrect
-                          ? 'bg-white'
-                          : isCleaned
-                          ? 'bg-emerald-50/60'
-                          : 'bg-rose-50/50'
+                        isInitiallyCorrect ? 'bg-white' : 'bg-rose-50/50'
                       }`}
                     >
                       {/* Header line: Question number, category, and status badge */}
@@ -373,16 +398,11 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
                           </span>
                         </div>
 
-                        {/* Status Badge */}
+                        {/* Status Badge: Genuine result of the completed game */}
                         {isInitiallyCorrect ? (
                           <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-400 text-emerald-950 rounded text-xs font-black flex items-center gap-1">
                             <CheckCircle className="w-3.5 h-3.5 text-emerald-700" />
                             <span>Asmatuta</span>
-                          </span>
-                        ) : isCleaned ? (
-                          <span className="px-2 py-0.5 bg-emerald-200 border border-emerald-500 text-emerald-950 rounded text-xs font-black flex items-center gap-1">
-                            <Sparkles className="w-3.5 h-3.5 text-emerald-800" />
-                            <span>Garbituta ✓</span>
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 bg-rose-100 border border-rose-400 text-rose-950 rounded text-xs font-black flex items-center gap-1">
@@ -477,33 +497,28 @@ export const GameReviewModal: React.FC<GameReviewModalProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="p-3 bg-neutral-100 border-t-2 border-black flex items-center justify-between shrink-0">
+            <div className="p-3 bg-neutral-100 border-t-2 border-black flex items-center justify-between shrink-0 flex-wrap gap-2">
               <div className="text-xs font-bold text-neutral-600">
-                {allMistakesHistory.length === 0 ? (
+                {mistakes.length === 0 ? (
                   <span className="text-emerald-700 font-black">
                     🎉 20 galderak asmatuta!
-                  </span>
-                ) : mistakes.length === 0 ? (
-                  <span className="text-emerald-700 font-black flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Akats guztiak garbituta daude!</span>
                   </span>
                 ) : (
                   <span>
                     <span className="text-rose-700 font-black">{mistakes.length} akats</span>{' '}
-                    garbitu gabe
+                    • Entrenamendua eskuragarri
                   </span>
                 )}
               </div>
 
               <div className="flex items-center gap-2">
-                {allMistakesHistory.length > 0 && (
+                {mistakes.length > 0 && (
                   <button
-                    onClick={handleStartPractice}
+                    onClick={() => handleStartPractice('mistakes')}
                     className="px-3.5 py-1.5 bg-yellow-300 hover:bg-yellow-200 text-neutral-950 font-black text-xs rounded-xl border-2 border-black shadow-[2px_2px_0_0_#000] flex items-center gap-1.5 cursor-pointer"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Praktikatu</span>
+                    <span>Hutsak Praktikatu</span>
                   </button>
                 )}
 

@@ -77,14 +77,57 @@ export interface PlayerCloudState {
 }
 
 // ==========================================
-// SCORING & STREAK FORMULAS
+// ==========================================
+// SCORING & STREAK FORMULAS (0 - 1.000 PUNTU)
 // ==========================================
 
+export const BASE_SCORE_PER_QUESTION = 40;
+export const MAX_SPEED_BONUS_PER_QUESTION = 10;
+export const SPEED_DECAY_SECONDS = 8;
+
 /**
- * Calculates official Mintzakats score:
- * - 10 puntos por cada acierto (hasta 200 puntos base con 20 preguntas).
- * - 25 puntos adicionales por cada segundo ahorrado por debajo del tiempo de referencia (120s),
- *   escalado proporcionalmente a la precisión para recompensar la velocidad real.
+ * Calculates score for a single question based on precision and speed:
+ * - Incorrect: 0 points
+ * - Correct: 40 base points + exponential decay speed bonus (up to 10 points)
+ *   speedBonus = 10 * exp(-seconds / 8)
+ *   Behavior:
+ *   - ~1s  -> 49 pt
+ *   - ~2s  -> 48 pt
+ *   - ~4s  -> 46 pt
+ *   - ~6s  -> 45 pt
+ *   - ~8s  -> 44 pt
+ *   - ~12s -> 42 pt
+ *   - ~20s -> 41 pt
+ *   - >=30s -> 40 pt
+ */
+export function calculateQuestionScore(
+  isCorrect: boolean,
+  responseTimeMs: number
+): {
+  basePoints: number;
+  speedBonus: number;
+  totalPoints: number;
+} {
+  if (!isCorrect) {
+    return { basePoints: 0, speedBonus: 0, totalPoints: 0 };
+  }
+
+  const seconds = Math.max(responseTimeMs, 0) / 1000;
+  const speedBonus = MAX_SPEED_BONUS_PER_QUESTION * Math.exp(-seconds / SPEED_DECAY_SECONDS);
+  const totalPoints = Math.round(BASE_SCORE_PER_QUESTION + speedBonus);
+
+  return {
+    basePoints: BASE_SCORE_PER_QUESTION,
+    speedBonus: Math.max(0, totalPoints - BASE_SCORE_PER_QUESTION),
+    totalPoints,
+  };
+}
+
+/**
+ * Calculates aggregate official Mintzakats score (approx 0 - 1.000 points):
+ * - Precision: 40 base points per correct answer (20 correct = 800 base points).
+ * - Speed: exponential decay bonus per correct answer based on average response time.
+ * - Theoretical maximum with 20 questions: 1.000 points.
  */
 export function calculateGameScore(
   correctAnswers: number,
@@ -97,30 +140,70 @@ export function calculateGameScore(
   secondsSaved: number;
 } {
   const safeCorrect = Math.max(0, Math.min(totalQuestions, correctAnswers));
-  // 10 puntos por cada acierto
-  const basePoints = safeCorrect * 10;
+  const basePoints = safeCorrect * BASE_SCORE_PER_QUESTION;
 
-  // Tiempo de referencia estándar: 120 segundos (2 minutos)
-  const maxBonusTime = 120;
-  const safeTime = Math.max(0, Math.min(maxBonusTime, timeSeconds));
+  if (safeCorrect === 0) {
+    return {
+      basePoints: 0,
+      speedBonus: 0,
+      totalPoints: 0,
+      secondsSaved: 0,
+    };
+  }
 
-  // Segundos ahorrados respecto a 120s
-  const secondsSaved = Math.max(0, Math.floor(maxBonusTime - safeTime));
-
-  // Factor de precisión: (aciertos / total)
-  const accuracyRatio = totalQuestions > 0 ? safeCorrect / totalQuestions : 0;
-
-  // 25 puntos adicionales por cada segundo ahorrado
-  const speedBonus = Math.round(secondsSaved * 25 * accuracyRatio);
-
+  // Average seconds per question
+  const avgSeconds = totalQuestions > 0 ? Math.max(0, timeSeconds) / totalQuestions : 0;
+  const speedBonusPerCorrect = MAX_SPEED_BONUS_PER_QUESTION * Math.exp(-avgSeconds / SPEED_DECAY_SECONDS);
+  const speedBonus = Math.round(safeCorrect * speedBonusPerCorrect);
   const totalPoints = basePoints + speedBonus;
 
   return {
     basePoints,
     speedBonus,
     totalPoints,
-    secondsSaved,
+    secondsSaved: speedBonus,
   };
+}
+
+/**
+ * Formats seconds into human-readable minutes and seconds without decimals.
+ * Examples: 141.7 -> "2m 22s", 926.5 -> "15m 26s", 45.2 -> "45s", 65 -> "1m 05s"
+ */
+export function formatMinutesSeconds(totalSeconds: number): string {
+  const rounded = Math.round(totalSeconds || 0);
+  const minutes = Math.floor(rounded / 60);
+  const seconds = rounded % 60;
+  if (minutes > 0) {
+    return `${minutes}m ${seconds < 10 ? '0' : ''}${seconds}s`;
+  }
+  return `${seconds}s`;
+}
+
+/**
+ * Mathematically derives the exact number of correct answers (0..totalQuestions)
+ * from a stored points score and elapsed time.
+ */
+export function deriveCorrectAnswers(
+  totalPoints: number,
+  timeSeconds: number,
+  totalQuestions: number = 20
+): number {
+  if (totalPoints <= 0) return 0;
+  // If score is already 0..totalQuestions (legacy score format)
+  if (totalPoints <= totalQuestions) {
+    return Math.round(totalPoints);
+  }
+
+  // Legacy 10-point system support (e.g. scores between 21 and 200)
+  if (totalPoints <= 200) {
+    return Math.min(totalQuestions, Math.max(0, Math.round(totalPoints / 10)));
+  }
+
+  // New system (40..50 pts per correct answer)
+  const avgSeconds = totalQuestions > 0 ? Math.max(0, timeSeconds) / totalQuestions : 0;
+  const expectedPointsPerCorrect = BASE_SCORE_PER_QUESTION + MAX_SPEED_BONUS_PER_QUESTION * Math.exp(-avgSeconds / SPEED_DECAY_SECONDS);
+  const derived = Math.round(totalPoints / expectedPointsPerCorrect);
+  return Math.min(totalQuestions, Math.max(0, derived));
 }
 
 /**
@@ -132,13 +215,15 @@ export function normalizeScoreRecord(raw: any): PlayerScoreRecord {
   const timeSeconds = Number(raw.time_seconds || raw.timeSeconds) || 0;
 
   let correctAnswers: number;
-  let totalPoints: number;
-  let speedBonus: number;
+  let totalPoints: number = rawScore;
+  let speedBonus: number = 0;
 
   if (typeof raw.correctAnswers === 'number') {
     correctAnswers = raw.correctAnswers;
-    totalPoints = rawScore;
     speedBonus = Number(raw.speedBonus) || 0;
+  } else if (typeof raw.correct_answers === 'number') {
+    correctAnswers = raw.correct_answers;
+    speedBonus = Number(raw.speed_bonus || raw.speedBonus) || 0;
   } else if (rawScore <= totalQuestions) {
     // Legacy record where score was just number of correct answers (0..20)
     correctAnswers = rawScore;
@@ -146,10 +231,9 @@ export function normalizeScoreRecord(raw: any): PlayerScoreRecord {
     totalPoints = calc.totalPoints;
     speedBonus = calc.speedBonus;
   } else {
-    // Points format
-    totalPoints = rawScore;
-    correctAnswers = Math.min(totalQuestions, Math.max(0, Math.round(rawScore / 100)));
-    speedBonus = Math.max(0, totalPoints - correctAnswers * 10);
+    // Points format: accurately derive the exact number of correct answers (0..20)
+    correctAnswers = deriveCorrectAnswers(rawScore, timeSeconds, totalQuestions);
+    speedBonus = Math.max(0, totalPoints - correctAnswers * BASE_SCORE_PER_QUESTION);
   }
 
   return {
@@ -406,7 +490,7 @@ export async function getToday7DayBlockQuestions(d: Date = new Date()): Promise<
 }
 
 // ================================================================
-// 3. CLOUD PERSISTENCE: PARTIDAK, RACHA, AKATSAK & EGUNEKO BLOKEOA
+// 3. CLOUD PERSISTENCE: PARTIDAK, BOLADA, AKATSAK & EGUNEKO BLOKEOA
 // ================================================================
 
 export function getAllStoredRecords(): PlayerScoreRecord[] {
@@ -686,29 +770,64 @@ export async function loadPlayerCloudState(
 }
 
 /**
- * Retrieves the player's last 7 days of completed games from Supabase,
+ * Retrieves the player's completed games for the active cycle from Supabase,
  * normalized with accuracy, speed bonus and total points.
+ * Only returns games belonging to the active 7-day cycle (does NOT include previous cycles).
  */
-export async function fetchPlayerRecent7DaysHistory(playerId: string): Promise<PlayerScoreRecord[]> {
+export async function fetchPlayerRecent7DaysHistory(
+  playerId: string,
+  cycleStartDateStr?: string
+): Promise<PlayerScoreRecord[]> {
   const cleanPlayerId = playerId.toLowerCase().trim();
 
+  // Determine effective cycle start date:
+  let effectiveCycleStart = cycleStartDateStr;
+  if (!effectiveCycleStart) {
+    const configuredStart = getConfiguredStartDate();
+    const info = getWeekBlockInfo(new Date(), configuredStart);
+    effectiveCycleStart = info.weekMondayDateStr;
+  }
+
+  // Calculate the 7-day end of this cycle
+  let effectiveCycleEnd: string | undefined;
+  if (effectiveCycleStart && /^\d{4}-\d{2}-\d{2}$/.test(effectiveCycleStart)) {
+    const [y, m, d] = effectiveCycleStart.split('-').map(Number);
+    const endD = new Date(y, m - 1, d + 6);
+    const ey = endD.getFullYear();
+    const em = String(endD.getMonth() + 1).padStart(2, '0');
+    const ed = String(endD.getDate()).padStart(2, '0');
+    effectiveCycleEnd = `${ey}-${em}-${ed}`;
+  }
+
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('partidak')
       .select('*')
       .eq('player_id', cleanPlayerId)
       .eq('status', 'completed')
-      .order('date_str', { ascending: false })
-      .limit(7);
+      .order('date_str', { ascending: false });
 
-    if (!error && data && data.length > 0) {
+    if (effectiveCycleStart) {
+      query = query.gte('date_str', effectiveCycleStart);
+    }
+    if (effectiveCycleEnd) {
+      query = query.lte('date_str', effectiveCycleEnd);
+    }
+
+    const { data, error } = await query.limit(7);
+
+    if (!error && data) {
       return data.map(normalizeScoreRecord);
     }
   } catch {}
 
   // Fallback to local
   const localRecords = getAllStoredRecords().filter(
-    r => r.playerId.toLowerCase() === cleanPlayerId && r.status === 'completed'
+    r =>
+      r.playerId.toLowerCase() === cleanPlayerId &&
+      r.status === 'completed' &&
+      (!effectiveCycleStart || r.dateStr >= effectiveCycleStart) &&
+      (!effectiveCycleEnd || r.dateStr <= effectiveCycleEnd)
   );
   localRecords.sort((a, b) => b.dateStr.localeCompare(a.dateStr));
   return localRecords.slice(0, 7);
