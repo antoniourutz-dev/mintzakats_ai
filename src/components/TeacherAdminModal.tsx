@@ -37,7 +37,12 @@ import {
 } from '../utils/weekCycle';
 import { Question, GrammarLesson } from '../types';
 import { getTodayDateString } from '../utils/storage';
-import { getAllPublishedGrammarLessons, getTodayMadridDateString } from '../services/grammarService';
+import {
+  getAllPublishedGrammarLessons,
+  getTodayMadridDateString,
+  getCycleGrammarSchedule,
+  CycleDayGrammarSchedule,
+} from '../services/grammarService';
 import { DailyGrammarModal } from './DailyGrammarModal';
 
 interface TeacherAdminModalProps {
@@ -80,6 +85,10 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
   const [grammarLessons, setGrammarLessons] = useState<GrammarLesson[]>([]);
   const [loadingGrammar, setLoadingGrammar] = useState<boolean>(false);
   const [previewGrammarLesson, setPreviewGrammarLesson] = useState<GrammarLesson | null>(null);
+  const [cycleGrammarDays, setCycleGrammarDays] = useState<CycleDayGrammarSchedule[]>([]);
+  const [loadingCycleGrammar, setLoadingCycleGrammar] = useState<boolean>(false);
+  const [grammarSubTab, setGrammarSubTab] = useState<'cycle' | 'all'>('cycle');
+  const [grammarSearchQuery, setGrammarSearchQuery] = useState<string>('');
 
   // 1. Load data when modal opens
   useEffect(() => {
@@ -88,7 +97,21 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
     loadPlayersList();
     loadQuestionsBank();
     loadGrammarLessons();
+    loadCycleGrammar();
   }, [isOpen]);
+
+  const loadCycleGrammar = async (customStart?: string | null) => {
+    setLoadingCycleGrammar(true);
+    try {
+      const data = await getCycleGrammarSchedule(customStart ?? currentBlockInfo.configuredStartDateStr);
+      setCycleGrammarDays(data);
+    } catch (e) {
+      console.error('Error loading cycle grammar:', e);
+      setCycleGrammarDays([]);
+    } finally {
+      setLoadingCycleGrammar(false);
+    }
+  };
 
   const loadGrammarLessons = async () => {
     setLoadingGrammar(true);
@@ -251,6 +274,7 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
       const updatedInfo = getWeekBlockInfo(new Date(), inputStartDate || null);
       setCurrentBlockInfo(updatedInfo);
       setDateSaveSuccess(true);
+      loadCycleGrammar(inputStartDate || null);
       onStartDateChanged?.(inputStartDate || null);
       setTimeout(() => setDateSaveSuccess(false), 3000);
     } catch (e) {
@@ -268,6 +292,7 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
       setCurrentBlockInfo(updatedInfo);
       setInputStartDate(updatedInfo.weekMondayDateStr);
       setDateSaveSuccess(true);
+      loadCycleGrammar(null);
       onStartDateChanged?.(null);
       setTimeout(() => setDateSaveSuccess(false), 3000);
     } catch (e) {
@@ -945,6 +970,59 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
               </span>
             </div>
 
+            {/* Eguneko Gramatika Pildora for Selected Day */}
+            {(() => {
+              const dayGrammar = cycleGrammarDays.find(
+                d => d.dayNumber === currentSelectedDay?.dayNumber
+              );
+              const lesson = dayGrammar?.lesson;
+
+              return (
+                <div className="p-3.5 bg-amber-50/90 border-2 border-black rounded-xl shadow-[3px_3px_0_0_#000] flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                    <div className="w-8 h-8 rounded-lg bg-amber-300 border border-black flex items-center justify-center shrink-0 shadow-[1px_1px_0_0_#000] mt-0.5">
+                      <Sparkles className="w-4 h-4 text-neutral-950 fill-amber-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-950 bg-amber-200/80 px-1.5 py-0.5 rounded border border-amber-300">
+                          Eguneko Gramatika Pildora
+                        </span>
+                        {lesson?.category && (
+                          <span className="text-[10px] font-bold text-neutral-700 bg-white px-1.5 py-0.5 rounded border border-neutral-300 capitalize">
+                            {lesson.category}
+                          </span>
+                        )}
+                        {lesson?.level && (
+                          <span className="text-[10px] font-black bg-yellow-300 text-neutral-950 px-1.5 py-0.5 rounded border border-black">
+                            {lesson.level}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-sm font-black text-neutral-950 truncate mt-0.5">
+                        {loadingCycleGrammar ? 'Pildora kargatzen...' : lesson ? lesson.title : 'Ez da pildorarik esleitu'}
+                      </h4>
+                      {lesson?.subtitle && (
+                        <p className="text-xs text-neutral-700 truncate font-medium">
+                          {lesson.subtitle}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {lesson && (
+                    <button
+                      onClick={() => setPreviewGrammarLesson(lesson)}
+                      className="px-3 py-1.5 bg-yellow-300 hover:bg-yellow-200 text-neutral-950 border border-black rounded-lg font-black text-xs shadow-[1px_1px_0_0_#000] flex items-center gap-1.5 cursor-pointer shrink-0 active:translate-x-[1px] active:translate-y-[1px]"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Aurreikusi Pildora</span>
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* 20 Questions List */}
             <div className="space-y-3">
               {loadingQuestions ? (
@@ -1050,100 +1128,285 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
             {/* Informational Banner */}
             <div className="p-3.5 bg-amber-50 border-2 border-black rounded-xl shadow-[3px_3px_0_0_#000] flex items-start gap-3">
               <div className="w-8 h-8 rounded-lg bg-amber-300 border border-black flex items-center justify-center shrink-0 shadow-[1px_1px_0_0_#000] mt-0.5">
-                <Sparkles className="w-4 h-4 text-neutral-950" />
+                <Sparkles className="w-4 h-4 text-neutral-950 fill-amber-400" />
               </div>
               <div className="space-y-1">
                 <h4 className="text-xs sm:text-sm font-black text-neutral-950">
                   Eguneko Gramatika — C1 Mikroikasgaiak
                 </h4>
                 <p className="text-xs font-bold text-neutral-700">
-                  Gaurko data erreferentzia (Europe/Madrid): <strong className="text-amber-900 font-mono">{getTodayMadridDateString()}</strong>.
+                  Gaurko data erreferentzia: <strong className="text-amber-900 font-mono">{getTodayMadridDateString()}</strong> (Zikloko {currentBlockInfo.dayNumberInBlock}. eguna: {currentBlockInfo.dayName}).
                 </p>
                 <p className="text-[11px] font-medium text-neutral-600">
-                  Ikasleen orri nagusian <code className="bg-white px-1.5 py-0.5 rounded border border-neutral-300 font-mono text-[10px]">grammar_daily_schedule</code> taulan programatutako eta aktibo dagoen (<code className="bg-white px-1 py-0.5 rounded border border-neutral-300 font-mono text-[10px]">is_active = true</code>) mikroikasgaia soilik erakusten da. Behean klik eginda mikroikasgaiak nola bistaratzen diren aurreikusi dezakezu.
+                  Hemen zikloko 7 egunetan argitaratuko diren mikroikasgai guztiak egunez egun berrikusi ditzakezu, bai eta liburutegiko ikasgai guztiak kontsultatu ere.
                 </p>
               </div>
             </div>
 
-            {/* List of Published Grammar Lessons */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-neutral-600">
-                  Argitaratutako Ikasgaiak ({grammarLessons.length})
-                </span>
+            {/* Sub-view switcher: 7-Day Cycle vs All Lessons Bank */}
+            <div className="flex items-center gap-2 border-b-2 border-neutral-200 pb-2 flex-wrap justify-between">
+              <div className="flex items-center gap-1.5">
                 <button
-                  onClick={loadGrammarLessons}
-                  disabled={loadingGrammar}
-                  className="px-2.5 py-1 bg-white hover:bg-neutral-100 border border-black rounded-lg text-xs font-black flex items-center gap-1 shadow-[1px_1px_0_0_#000] cursor-pointer"
+                  onClick={() => setGrammarSubTab('cycle')}
+                  className={`px-3 py-1.5 rounded-xl border-2 font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all ${
+                    grammarSubTab === 'cycle'
+                      ? 'bg-amber-300 text-neutral-950 border-black shadow-[2px_2px_0_0_#000]'
+                      : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                  }`}
                 >
-                  <RefreshCw className={`w-3 h-3 ${loadingGrammar ? 'animate-spin' : ''}`} />
-                  <span>Eguneratu</span>
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Zikloko 7 Eguneko Pildorak</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-black text-white text-[9px] font-black">
+                    7 egun
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setGrammarSubTab('all')}
+                  className={`px-3 py-1.5 rounded-xl border-2 font-black text-xs flex items-center gap-1.5 cursor-pointer transition-all ${
+                    grammarSubTab === 'all'
+                      ? 'bg-amber-300 text-neutral-950 border-black shadow-[2px_2px_0_0_#000]'
+                      : 'bg-white text-neutral-700 border-neutral-300 hover:bg-neutral-50'
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Ikasgai Guztien Bankua</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-neutral-200 text-neutral-900 text-[9px] font-black">
+                    {grammarLessons.length}
+                  </span>
                 </button>
               </div>
 
-              {loadingGrammar ? (
-                <div className="py-12 text-center">
-                  <div className="w-8 h-8 border-4 border-black border-t-yellow-300 rounded-full animate-spin mx-auto mb-2" />
-                  <span className="text-xs font-bold text-neutral-500">Ikasgaiak kargatzen...</span>
+              <button
+                onClick={() => {
+                  loadGrammarLessons();
+                  loadCycleGrammar();
+                }}
+                disabled={loadingGrammar || loadingCycleGrammar}
+                className="px-2.5 py-1.5 bg-white hover:bg-neutral-100 border border-black rounded-lg text-xs font-black flex items-center gap-1 shadow-[1px_1px_0_0_#000] cursor-pointer"
+                title="Datuak eguneratu"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingGrammar || loadingCycleGrammar ? 'animate-spin' : ''}`} />
+                <span>Eguneratu</span>
+              </button>
+            </div>
+
+            {/* SUB-VIEW 1: 7-DAY CYCLE SCHEDULE */}
+            {grammarSubTab === 'cycle' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-black text-neutral-800 uppercase tracking-wider text-[11px]">
+                    Zikloko 7 Egunak (Astelehenetik Igandera)
+                  </span>
+                  <span className="text-neutral-500 font-bold">
+                    Zikloaren hasiera: <strong>{currentBlockInfo.configuredStartDateStr || currentBlockInfo.weekMondayDateStr}</strong>
+                  </span>
                 </div>
-              ) : grammarLessons.length === 0 ? (
-                <div className="p-8 text-center bg-neutral-50 rounded-xl border-2 border-neutral-200">
-                  <p className="text-xs font-bold text-neutral-500">
-                    Ez da argitaratutako mikroikasgairik aurkitu &apos;grammar_lessons&apos; taulan (status = &apos;published&apos;).
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {grammarLessons.map(lesson => (
-                    <div
-                      key={lesson.id}
-                      className="p-4 bg-white border-2 border-black rounded-xl shadow-[3px_3px_0_0_#000] flex flex-col justify-between gap-3 text-left"
-                    >
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="px-2 py-0.5 bg-yellow-300 border border-black rounded-md font-black text-[10px] text-neutral-950 shadow-[1px_1px_0_0_#000]">
-                            {lesson.level || 'C1'}
-                          </span>
-                          {lesson.category && (
-                            <span className="px-2 py-0.5 bg-neutral-100 border border-neutral-300 rounded-md font-bold text-[10px] text-neutral-700 capitalize">
-                              {lesson.category}
-                            </span>
+
+                {loadingCycleGrammar ? (
+                  <div className="py-12 text-center">
+                    <div className="w-8 h-8 border-4 border-black border-t-amber-400 rounded-full animate-spin mx-auto mb-2" />
+                    <span className="text-xs font-bold text-neutral-500">Zikloko pildorak kargatzen...</span>
+                  </div>
+                ) : cycleGrammarDays.length === 0 ? (
+                  <div className="p-8 text-center bg-neutral-50 rounded-xl border-2 border-neutral-200">
+                    <p className="text-xs font-bold text-neutral-500">
+                      Ez da zikloko daturik eskuratu.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {cycleGrammarDays.map(dayItem => {
+                      const lesson = dayItem.lesson;
+
+                      return (
+                        <div
+                          key={dayItem.dayNumber}
+                          className={`p-3.5 sm:p-4 rounded-xl border-2 border-black shadow-[3px_3px_0_0_#000] flex flex-col justify-between gap-3 text-left transition-all ${
+                            dayItem.isToday
+                              ? 'bg-amber-50 ring-2 ring-amber-400/80'
+                              : 'bg-white'
+                          }`}
+                        >
+                          <div className="space-y-2">
+                            {/* Day Header */}
+                            <div className="flex items-center justify-between gap-2 border-b border-neutral-200 pb-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-6 h-6 rounded bg-neutral-900 text-white font-black text-xs flex items-center justify-center shrink-0">
+                                  {dayItem.dayNumber}
+                                </span>
+                                <span className="font-black text-sm text-neutral-950">
+                                  {dayItem.dayName}
+                                </span>
+                                <span className="text-[11px] font-bold text-neutral-500">
+                                  ({dayItem.dateStr})
+                                </span>
+                              </div>
+
+                              {dayItem.isToday && (
+                                <span className="px-2 py-0.5 rounded-full bg-yellow-300 border border-black text-neutral-950 text-[10px] font-black uppercase tracking-wider shadow-[1px_1px_0_0_#000]">
+                                  Gaur
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Lesson details */}
+                            {lesson ? (
+                              <div className="space-y-1.5 pt-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {lesson.level && (
+                                    <span className="px-2 py-0.5 bg-yellow-300 border border-black rounded-md font-black text-[10px] text-neutral-950 shadow-[1px_1px_0_0_#000]">
+                                      {lesson.level}
+                                    </span>
+                                  )}
+                                  {lesson.category && (
+                                    <span className="px-2 py-0.5 bg-neutral-100 border border-neutral-300 rounded-md font-bold text-[10px] text-neutral-700 capitalize">
+                                      {lesson.category}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <h4 className="text-base font-black text-neutral-950 leading-snug">
+                                  {lesson.title}
+                                </h4>
+
+                                {lesson.subtitle && (
+                                  <p className="text-xs font-bold text-amber-800">
+                                    {lesson.subtitle}
+                                  </p>
+                                )}
+
+                                {lesson.pattern && (
+                                  <div className="p-2 bg-neutral-50 border border-neutral-200 rounded-lg text-[11px] font-mono font-bold text-neutral-800">
+                                    {lesson.pattern}
+                                  </div>
+                                )}
+
+                                <p className="text-xs text-neutral-600 line-clamp-2">
+                                  {lesson.summary}
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="py-4 text-center text-xs font-bold text-neutral-400">
+                                Ez da mikroikasgairik esleitu egun honetarako
+                              </div>
+                            )}
+                          </div>
+
+                          {lesson && (
+                            <div className="pt-2 border-t border-neutral-200 flex items-center justify-between">
+                              <span className="text-[10px] font-mono text-neutral-400">
+                                {lesson.concept_key}
+                              </span>
+
+                              <button
+                                onClick={() => setPreviewGrammarLesson(lesson)}
+                                className="px-3 py-1.5 bg-yellow-300 hover:bg-yellow-200 text-neutral-950 border border-black rounded-lg font-black text-xs shadow-[1px_1px_0_0_#000] flex items-center gap-1.5 cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Ikusi Pildora</span>
+                              </button>
+                            </div>
                           )}
                         </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
-                        <h4 className="text-base font-black text-neutral-950 leading-snug">
-                          {lesson.title}
-                        </h4>
-
-                        {lesson.subtitle && (
-                          <p className="text-xs font-bold text-amber-800">
-                            {lesson.subtitle}
-                          </p>
-                        )}
-
-                        <p className="text-xs text-neutral-600 line-clamp-2">
-                          {lesson.summary}
-                        </p>
-                      </div>
-
-                      <div className="pt-2 border-t border-neutral-200 flex items-center justify-between">
-                        <span className="text-[10px] font-mono text-neutral-400">
-                          {lesson.concept_key}
-                        </span>
-
-                        <button
-                          onClick={() => setPreviewGrammarLesson(lesson)}
-                          className="px-3 py-1.5 bg-yellow-300 hover:bg-yellow-200 text-neutral-950 border border-black rounded-lg font-black text-xs shadow-[1px_1px_0_0_#000] flex items-center gap-1 cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Ikusi Aurrebista</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+            {/* SUB-VIEW 2: ALL LESSONS BANK */}
+            {grammarSubTab === 'all' && (
+              <div className="space-y-3">
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                  <input
+                    type="text"
+                    placeholder="Bilatu ikasgaiak tituluz, kontzeptuz edo kategoriatzat..."
+                    value={grammarSearchQuery}
+                    onChange={e => setGrammarSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-white border-2 border-black rounded-xl text-xs font-bold shadow-[2px_2px_0_0_#000] focus:outline-hidden"
+                  />
                 </div>
-              )}
-            </div>
+
+                {loadingGrammar ? (
+                  <div className="py-12 text-center">
+                    <div className="w-8 h-8 border-4 border-black border-t-yellow-300 rounded-full animate-spin mx-auto mb-2" />
+                    <span className="text-xs font-bold text-neutral-500">Ikasgaiak kargatzen...</span>
+                  </div>
+                ) : grammarLessons.length === 0 ? (
+                  <div className="p-8 text-center bg-neutral-50 rounded-xl border-2 border-neutral-200">
+                    <p className="text-xs font-bold text-neutral-500">
+                      Ez da argitaratutako mikroikasgairik aurkitu &apos;grammar_lessons&apos; taulan (status = &apos;published&apos;).
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {grammarLessons
+                      .filter(l => {
+                        const q = grammarSearchQuery.toLowerCase().trim();
+                        if (!q) return true;
+                        return (
+                          l.title.toLowerCase().includes(q) ||
+                          (l.subtitle && l.subtitle.toLowerCase().includes(q)) ||
+                          (l.category && l.category.toLowerCase().includes(q)) ||
+                          l.concept_key.toLowerCase().includes(q) ||
+                          l.summary.toLowerCase().includes(q)
+                        );
+                      })
+                      .map(lesson => (
+                        <div
+                          key={lesson.id}
+                          className="p-4 bg-white border-2 border-black rounded-xl shadow-[3px_3px_0_0_#000] flex flex-col justify-between gap-3 text-left"
+                        >
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="px-2 py-0.5 bg-yellow-300 border border-black rounded-md font-black text-[10px] text-neutral-950 shadow-[1px_1px_0_0_#000]">
+                                {lesson.level || 'C1'}
+                              </span>
+                              {lesson.category && (
+                                <span className="px-2 py-0.5 bg-neutral-100 border border-neutral-300 rounded-md font-bold text-[10px] text-neutral-700 capitalize">
+                                  {lesson.category}
+                                </span>
+                              )}
+                            </div>
+
+                            <h4 className="text-base font-black text-neutral-950 leading-snug">
+                              {lesson.title}
+                            </h4>
+
+                            {lesson.subtitle && (
+                              <p className="text-xs font-bold text-amber-800">
+                                {lesson.subtitle}
+                              </p>
+                            )}
+
+                            <p className="text-xs text-neutral-600 line-clamp-2">
+                              {lesson.summary}
+                            </p>
+                          </div>
+
+                          <div className="pt-2 border-t border-neutral-200 flex items-center justify-between">
+                            <span className="text-[10px] font-mono text-neutral-400">
+                              {lesson.concept_key}
+                            </span>
+
+                            <button
+                              onClick={() => setPreviewGrammarLesson(lesson)}
+                              className="px-3 py-1.5 bg-yellow-300 hover:bg-yellow-200 text-neutral-950 border border-black rounded-lg font-black text-xs shadow-[1px_1px_0_0_#000] flex items-center gap-1.5 cursor-pointer active:translate-x-[1px] active:translate-y-[1px]"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Ikusi Aurrebista</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1205,6 +1468,9 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
         isOpen={Boolean(previewGrammarLesson)}
         onClose={() => setPreviewGrammarLesson(null)}
         lesson={previewGrammarLesson}
+        customStartDateStr={currentBlockInfo.configuredStartDateStr}
+        dayNumberInBlock={currentBlockInfo.dayNumberInBlock}
+        isAdmin={true}
       />
     </div>
   );

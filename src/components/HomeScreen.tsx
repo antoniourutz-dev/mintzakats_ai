@@ -12,7 +12,7 @@ import {
 import { WeekBlockInfo } from '../utils/weekCycle';
 import { PlayerScoreRecord, formatMinutesSeconds } from '../services/supabase';
 import { GrammarLesson } from '../types';
-import { getTodayDailyGrammarLesson } from '../services/grammarService';
+import { getTodayDailyGrammarLesson, getCachedDailyGrammarLesson } from '../services/grammarService';
 import { DailyGrammarCard } from './DailyGrammarCard';
 import { DailyGrammarModal } from './DailyGrammarModal';
 
@@ -51,28 +51,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 }) => {
   const isGameLocked = isAdmin ? false : hasStartedOrPlayedToday;
 
-  // Eguneko Gramatika state
-  const [dailyLesson, setDailyLesson] = useState<GrammarLesson | null>(null);
-  const [isLoadingLesson, setIsLoadingLesson] = useState<boolean>(true);
+  // Eguneko Gramatika state - initialized synchronously from cache to guarantee instant 0ms render
+  const [dailyLesson, setDailyLesson] = useState<GrammarLesson | null>(() => getCachedDailyGrammarLesson());
   const [isGrammarModalOpen, setIsGrammarModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
     let isMounted = true;
-    setIsLoadingLesson(true);
 
     getTodayDailyGrammarLesson()
       .then(lesson => {
-        if (isMounted) {
+        if (isMounted && lesson) {
           setDailyLesson(lesson);
-          setIsLoadingLesson(false);
         }
       })
       .catch(err => {
         console.warn('Errorea Eguneko Gramatika kargatzean:', err);
-        if (isMounted) {
-          setDailyLesson(null);
-          setIsLoadingLesson(false);
-        }
       });
 
     return () => {
@@ -250,15 +243,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </div>
           </button>
 
-          {/* OPTION 3: EGUNEKO GRAMATIKA */}
-          {dailyLesson ? (
-            <DailyGrammarCard
-              lesson={dailyLesson}
-              onClick={() => setIsGrammarModalOpen(true)}
-            />
-          ) : isLoadingLesson ? (
-            <div className="w-full h-14 rounded-xl border-3 border-neutral-200 bg-neutral-100/60 animate-pulse" />
-          ) : null}
+          {/* OPTION 3: EGUNEKO GRAMATIKA - Renders instantaneously without any network delay */}
+          <DailyGrammarCard
+            lesson={dailyLesson || undefined}
+            onClick={() => setIsGrammarModalOpen(true)}
+          />
         </div>
 
         {/* Bottom Status / Extra Actions */}
@@ -301,6 +290,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         isOpen={isGrammarModalOpen}
         onClose={() => setIsGrammarModalOpen(false)}
         lesson={dailyLesson}
+        customStartDateStr={blockInfo.configuredStartDateStr}
+        dayNumberInBlock={blockInfo.dayNumberInBlock}
+        isAdmin={isAdmin}
       />
     </div>
   );

@@ -1,5 +1,15 @@
 import { supabase } from './supabase';
 import { GrammarLesson, GrammarExample } from '../types';
+import { getWeekBlockInfo, BASQUE_DAY_NAMES } from '../utils/weekCycle';
+
+export interface CycleDayGrammarSchedule {
+  dayIndex: number; // 0..6
+  dayNumber: number; // 1..7
+  dayName: string; // 'Astelehena', etc.
+  dateStr: string; // 'YYYY-MM-DD'
+  isToday: boolean;
+  lesson: GrammarLesson | null;
+}
 
 /**
  * Returns today's date in Europe/Madrid timezone as 'YYYY-MM-DD'.
@@ -26,6 +36,50 @@ export function getTodayMadridDateString(): string {
   } catch {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+}
+
+const MEMORY_LESSON_CACHE = new Map<string, GrammarLesson>();
+const CYCLE_SCHEDULE_CACHE = new Map<string, CycleDayGrammarSchedule[]>();
+const STORAGE_CACHE_PREFIX = 'mintzakats_grammar_pill_v1_';
+
+/**
+ * Synchronously retrieves cached daily grammar lesson (memory or localStorage)
+ * for instant 0ms rendering with zero layout shift.
+ */
+export function getCachedDailyGrammarLesson(targetDate?: string): GrammarLesson | null {
+  const dateStr = targetDate || getTodayMadridDateString();
+
+  if (MEMORY_LESSON_CACHE.has(dateStr)) {
+    return MEMORY_LESSON_CACHE.get(dateStr) || null;
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(STORAGE_CACHE_PREFIX + dateStr);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.id && parsed.title) {
+          MEMORY_LESSON_CACHE.set(dateStr, parsed);
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore parse error
+    }
+  }
+
+  return null;
+}
+
+function saveLessonToCache(dateStr: string, lesson: GrammarLesson) {
+  MEMORY_LESSON_CACHE.set(dateStr, lesson);
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(STORAGE_CACHE_PREFIX + dateStr, JSON.stringify(lesson));
+    } catch {
+      // Storage quota or disabled
+    }
   }
 }
 
@@ -65,6 +119,12 @@ function normalizeGrammarExamples(rawExamples: any): GrammarExample[] {
 export async function getTodayDailyGrammarLesson(targetDate?: string): Promise<GrammarLesson | null> {
   const today = targetDate || getTodayMadridDateString();
 
+  // 1. Immediate cache return for 0ms render
+  const cached = getCachedDailyGrammarLesson(today);
+  if (cached) {
+    return cached;
+  }
+
   try {
     const { data, error } = await supabase
       .from('grammar_daily_schedule')
@@ -96,7 +156,7 @@ export async function getTodayDailyGrammarLesson(targetDate?: string): Promise<G
         : data.grammar_lessons;
 
       if (rawLesson && rawLesson.status === 'published') {
-        return {
+        const resolved: GrammarLesson = {
           id: rawLesson.id,
           concept_key: rawLesson.concept_key,
           title: rawLesson.title,
@@ -110,6 +170,8 @@ export async function getTodayDailyGrammarLesson(targetDate?: string): Promise<G
           examples: normalizeGrammarExamples(rawLesson.examples),
           status: rawLesson.status,
         };
+        saveLessonToCache(today, resolved);
+        return resolved;
       }
     }
 
@@ -126,7 +188,7 @@ export async function getTodayDailyGrammarLesson(targetDate?: string): Promise<G
       const dayHash = today.split('-').reduce((acc, part) => acc + (parseInt(part, 10) || 0), 0);
       const chosen = publishedLessons[dayHash % publishedLessons.length];
 
-      return {
+      const resolved: GrammarLesson = {
         id: chosen.id,
         concept_key: chosen.concept_key,
         title: chosen.title,
@@ -140,6 +202,8 @@ export async function getTodayDailyGrammarLesson(targetDate?: string): Promise<G
         examples: normalizeGrammarExamples(chosen.examples),
         status: chosen.status,
       };
+      saveLessonToCache(today, resolved);
+      return resolved;
     }
 
     return null;
@@ -169,6 +233,119 @@ export async function getAllPublishedGrammarLessons(): Promise<GrammarLesson[]> 
       examples: normalizeGrammarExamples(item.examples),
     }));
   } catch {
+    return [];
+  }
+}
+
+/**
+  * Resolves the scheduled grammar lesson for all 7 days of the active cycle.
+  * Checks explicit schedule row first, then falls back to deterministic rotation.
+  */
+export async function getCycleGrammarSchedule(
+  customStartDateStr?: string | null
+): Promise<CycleDayGrammarSchedule[]> {
+  try {
+    const blockInfo = getWeekBlockInfo(new Date(), customStartDateStr);
+    const cacheKey = blockInfo.weekMondayDateStr;
+    if (CYCLE_SCHEDULE_CACHE.has(cacheKey)) {
+      return CYCLE_SCHEDULE_CACHE.get(cacheKey)!;
+    }
+
+    const [mYear, mMonth, mDay] = blockInfo.weekMondayDateStr.split('-').map(Number);
+    const mondayDate = new Date(mYear, mMonth - 1, mDay, 0, 0, 0, 0);
+
+    const dates = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(mondayDate);
+      d.setDate(mondayDate.getDate() + i);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dayNum = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${dayNum}`;
+    });
+
+    const [schedRes, pubRes] = await Promise.all([
+      supabase
+        .from('grammar_daily_schedule')
+        .select(`
+          scheduled_date,
+          grammar_lessons (
+            id,
+            concept_key,
+            title,
+            subtitle,
+            category,
+            level,
+            summary,
+            explanation,
+            pattern,
+            key_point,
+            examples,
+            status
+          )
+        `)
+        .in('scheduled_date', dates)
+        .eq('is_active', true),
+      supabase
+        .from('grammar_lessons')
+        .select('*')
+        .eq('status', 'published')
+        .order('created_at', { ascending: true })
+    ]);
+
+    const schedMap = new Map<string, any>();
+    if (!schedRes.error && schedRes.data) {
+      schedRes.data.forEach((row: any) => {
+        const raw = Array.isArray(row.grammar_lessons) ? row.grammar_lessons[0] : row.grammar_lessons;
+        if (raw && raw.status === 'published') {
+          schedMap.set(row.scheduled_date, raw);
+        }
+      });
+    }
+
+    const pubLessons = pubRes.data || [];
+
+    const result: CycleDayGrammarSchedule[] = dates.map((dateStr, i) => {
+      const isToday = i + 1 === blockInfo.dayNumberInBlock;
+      let rawLesson = schedMap.get(dateStr);
+
+      if (!rawLesson && pubLessons.length > 0) {
+        const dayHash = dateStr.split('-').reduce((acc, part) => acc + (parseInt(part, 10) || 0), 0);
+        rawLesson = pubLessons[dayHash % pubLessons.length];
+      }
+
+      let lesson: GrammarLesson | null = null;
+      if (rawLesson) {
+        lesson = {
+          id: rawLesson.id,
+          concept_key: rawLesson.concept_key,
+          title: rawLesson.title,
+          subtitle: rawLesson.subtitle,
+          category: rawLesson.category || null,
+          level: rawLesson.level || null,
+          summary: rawLesson.summary || '',
+          explanation: rawLesson.explanation || '',
+          pattern: rawLesson.pattern || null,
+          key_point: rawLesson.key_point || null,
+          examples: normalizeGrammarExamples(rawLesson.examples),
+          status: rawLesson.status,
+        };
+        saveLessonToCache(dateStr, lesson);
+      }
+
+      return {
+        dayIndex: i,
+        dayNumber: i + 1,
+        dayName: BASQUE_DAY_NAMES[i],
+        dateStr,
+        isToday,
+        lesson,
+      };
+    });
+
+    CYCLE_SCHEDULE_CACHE.set(cacheKey, result);
+    return result;
+  } catch (err) {
+    console.error('Failed to load cycle grammar schedule:', err);
     return [];
   }
 }
