@@ -457,6 +457,33 @@ export default function App() {
     }
   };
 
+  // Record deleted by teacher (allows student to replay immediately)
+  const handleRecordDeleted = (deletedPlayerId: string, dateStr: string) => {
+    const pName = studentName.toLowerCase().trim();
+    const cEmail = currentStudentEmail ? currentStudentEmail.toLowerCase().trim() : '';
+    const targetId = deletedPlayerId.toLowerCase().trim();
+
+    if (targetId === pName || (cEmail && targetId === cEmail)) {
+      if (dateStr === todayDateStr) {
+        setHasStartedOrPlayedToday(false);
+        setTodayRecord(null);
+        setLastGameMistakes([]);
+        setTodayReviewItems([]);
+        setState(prev => ({
+          ...prev,
+          dailyProgress: {
+            currentQuestionIndex: 0,
+            answers: {},
+            score: 0,
+            total: totalQuestionsCount,
+            completed: false,
+            timeSpent: 0,
+          },
+        }));
+      }
+    }
+  };
+
   // Count mistakes from official game
   const pendingMistakesCount = todayReviewItems.filter(u => !u.isCorrect).length;
 
@@ -540,6 +567,7 @@ export default function App() {
               isOpen={isTeacherAdminOpen}
               onClose={() => setIsTeacherAdminOpen(false)}
               onStartDateChanged={handleTeacherStartDateChanged}
+              onRecordDeleted={handleRecordDeleted}
             />
           )}
         </React.Suspense>
@@ -716,6 +744,7 @@ export default function App() {
               isOpen={isTeacherAdminOpen}
               onClose={() => setIsTeacherAdminOpen(false)}
               onStartDateChanged={handleTeacherStartDateChanged}
+              onRecordDeleted={handleRecordDeleted}
             />
           )}
         </React.Suspense>

@@ -49,12 +49,14 @@ interface TeacherAdminModalProps {
   isOpen: boolean;
   onClose: () => void;
   onStartDateChanged?: (newStartDate: string | null) => void;
+  onRecordDeleted?: (playerId: string, dateStr: string) => void;
 }
 
 export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
   isOpen,
   onClose,
   onStartDateChanged,
+  onRecordDeleted,
 }) => {
   const [activeTab, setActiveTab] = useState<'students' | 'schedule' | 'questions' | 'grammar'>('students');
 
@@ -66,6 +68,7 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
   const [playerToDelete, setPlayerToDelete] = useState<AdminPlayerOverview | null>(null);
   const [recordToDelete, setRecordToDelete] = useState<{ player: AdminPlayerOverview; record: PlayerScoreRecord } | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [toastNotification, setToastNotification] = useState<string | null>(null);
 
   // Cycle Start Date state
   const [currentBlockInfo, setCurrentBlockInfo] = useState(() => getWeekBlockInfo());
@@ -193,13 +196,14 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
     if (!recordToDelete) return;
     setIsDeleting(true);
     const { player, record } = recordToDelete;
+    const isTodayRecord = record.dateStr === getTodayDateString();
     try {
       await deletePlayerDateRecordAdmin(player.playerId, record.dateStr);
 
       // Refresh local player list and details
       setPlayers(prev =>
         prev.map(p => {
-          if (p.playerId !== player.playerId) return p;
+          if (p.playerId.toLowerCase() !== player.playerId.toLowerCase()) return p;
           const updatedRecords = p.records.filter(r => r.dateStr !== record.dateStr);
           const totalGames = updatedRecords.length;
           const totalPoints = updatedRecords.reduce((acc, r) => acc + r.score, 0);
@@ -228,7 +232,7 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
         })
       );
 
-      if (selectedPlayerForDetails && selectedPlayerForDetails.playerId === player.playerId) {
+      if (selectedPlayerForDetails && selectedPlayerForDetails.playerId.toLowerCase() === player.playerId.toLowerCase()) {
         setSelectedPlayerForDetails(prev => {
           if (!prev) return null;
           const updatedRecords = prev.records.filter(r => r.dateStr !== record.dateStr);
@@ -258,6 +262,13 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
         });
       }
 
+      onRecordDeleted?.(player.playerId, record.dateStr);
+      setToastNotification(
+        isTodayRecord
+          ? `Gaurko partida ezabatu da! "${player.playerName}" ikasleak orain berriro jokatu dezake gaur.`
+          : `"${player.playerName}" ikaslearen ${record.dateStr} datako partida ezabatu da.`
+      );
+      setTimeout(() => setToastNotification(null), 4000);
       setRecordToDelete(null);
     } catch (e) {
       console.error('Delete date record failed:', e);
@@ -319,7 +330,15 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-xs select-none animate-in fade-in duration-150">
-      <div className="w-full max-w-4xl h-[92vh] max-h-[92vh] bg-white rounded-2xl border-4 border-black shadow-[8px_8px_0_0_#000] flex flex-col overflow-hidden">
+      <div className="w-full max-w-4xl h-[92vh] max-h-[92vh] bg-white rounded-2xl border-4 border-black shadow-[8px_8px_0_0_#000] flex flex-col overflow-hidden relative">
+        {/* Toast Notification */}
+        {toastNotification && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-60 px-4 py-2 bg-emerald-600 text-white font-black text-xs border-2 border-black rounded-xl shadow-[4px_4px_0_0_#000] flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-150">
+            <CheckCircle className="w-4 h-4 text-emerald-200 shrink-0" />
+            <span>{toastNotification}</span>
+          </div>
+        )}
+
         {/* Header */}
         <div className="p-3 sm:p-4 bg-yellow-300 border-b-4 border-black flex items-center justify-between shrink-0 gap-2">
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
@@ -576,6 +595,7 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
                       <thead>
                         <tr className="bg-neutral-200 text-neutral-700 font-black">
                           <th className="p-2 border border-neutral-300">Data</th>
+                          <th className="p-2 border border-neutral-300">Egoera</th>
                           <th className="p-2 border border-neutral-300">Puntuak</th>
                           <th className="p-2 border border-neutral-300">Aciertos</th>
                           <th className="p-2 border border-neutral-300">Denbora</th>
@@ -586,6 +606,7 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
                       <tbody>
                         {selectedPlayerForDetails.records.map((r, rIdx) => {
                           const isToday = r.dateStr === getTodayDateString();
+                          const isStarted = r.status === 'started' || (r.score === 0 && r.timeSeconds === 0);
                           return (
                             <tr key={rIdx} className="border-b border-neutral-200 hover:bg-neutral-100">
                               <td className="p-2 font-bold flex items-center gap-1.5">
@@ -593,6 +614,17 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
                                 {isToday && (
                                   <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[9px] font-black uppercase">
                                     Gaur
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2">
+                                {isStarted ? (
+                                  <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-black uppercase inline-flex items-center gap-1">
+                                    Amaitu gabe
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[9px] font-black uppercase inline-flex items-center gap-1">
+                                    Amaituta
                                   </span>
                                 )}
                               </td>
@@ -665,6 +697,19 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
                         >
                           <Eye className="w-4 h-4" />
                         </button>
+
+                        {p.records.some(r => r.dateStr === getTodayDateString()) && (
+                          <button
+                            onClick={() => {
+                              const rec = p.records.find(r => r.dateStr === getTodayDateString());
+                              if (rec) setRecordToDelete({ player: p, record: rec });
+                            }}
+                            title="Ezabatu gaurko partida (berjokatu ahal izateko)"
+                            className="p-1.5 bg-amber-200 hover:bg-amber-300 text-amber-950 border-2 border-black rounded-lg shadow-[1px_1px_0_0_#000] cursor-pointer"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+                        )}
 
                         <button
                           onClick={() => setPlayerToDelete(p)}
@@ -810,6 +855,19 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
                               >
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
+
+                              {p.records.some(r => r.dateStr === getTodayDateString()) && (
+                                <button
+                                  onClick={() => {
+                                    const rec = p.records.find(r => r.dateStr === getTodayDateString());
+                                    if (rec) setRecordToDelete({ player: p, record: rec });
+                                  }}
+                                  title="Ezabatu gaurko partida (berjokatu ahal izateko)"
+                                  className="p-1.5 bg-amber-200 hover:bg-amber-300 text-amber-950 border border-black rounded-lg shadow-[1px_1px_0_0_#000] cursor-pointer"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </button>
+                              )}
 
                               <button
                                 onClick={() => setPlayerToDelete(p)}
@@ -1442,6 +1500,55 @@ export const TeacherAdminModal: React.FC<TeacherAdminModalProps> = ({
                   className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white border-2 border-black rounded-xl font-black text-xs shadow-[2px_2px_0_0_#000] cursor-pointer"
                 >
                   {isDeleting ? 'Ezabatzen...' : 'Bai, Ezabatu'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Single Date Record Confirmation Modal (Allows student to replay today) */}
+        {recordToDelete && (
+          <div className="fixed inset-0 z-60 bg-black/60 flex items-center justify-center p-4 animate-in fade-in duration-100 select-none">
+            <div className="w-full max-w-sm bg-white border-4 border-black rounded-2xl p-5 shadow-[6px_6px_0_0_#000] space-y-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-100 border-2 border-black flex items-center justify-center mx-auto text-amber-700 shadow-[2px_2px_0_0_#000]">
+                <RotateCcw className="w-6 h-6" />
+              </div>
+
+              <div className="text-center space-y-1.5">
+                <h3 className="text-base font-black text-neutral-950">
+                  {recordToDelete.record.dateStr === getTodayDateString()
+                    ? 'Gaurko Partida Ezabatu (Berjokatu)?'
+                    : 'Ezabatu Data Honetako Partida?'}
+                </h3>
+                <p className="text-xs font-bold text-neutral-600 leading-relaxed">
+                  {recordToDelete.record.dateStr === getTodayDateString() ? (
+                    <>
+                      <strong className="text-neutral-950">{recordToDelete.player.playerName}</strong> ikaslearen gaurko partida ezabatuko da, eta ikasleak <strong>gaur bertan berriro jokatu</strong> ahal izango du hutsetik.
+                    </>
+                  ) : (
+                    <>
+                      Ziur zaude <strong className="text-neutral-950">{recordToDelete.player.playerName}</strong> ikaslearen <strong className="text-neutral-950">{recordToDelete.record.dateStr}</strong> datako partida ezabatu nahi duzula?
+                    </>
+                  )}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setRecordToDelete(null)}
+                  disabled={isDeleting}
+                  className="flex-1 py-2 bg-neutral-100 hover:bg-neutral-200 border-2 border-black rounded-xl font-black text-xs cursor-pointer"
+                >
+                  Utzi
+                </button>
+
+                <button
+                  onClick={handleConfirmDeleteRecord}
+                  disabled={isDeleting}
+                  className="flex-1 py-2 bg-amber-400 hover:bg-amber-300 text-neutral-950 border-2 border-black rounded-xl font-black text-xs shadow-[2px_2px_0_0_#000] cursor-pointer flex items-center justify-center gap-1 active:translate-x-[1px] active:translate-y-[1px]"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${isDeleting ? 'animate-spin' : ''}`} />
+                  <span>{isDeleting ? 'Ezabatzen...' : 'Bai, Ezabatu (Berjokatu)'}</span>
                 </button>
               </div>
             </div>

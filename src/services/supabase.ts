@@ -6,6 +6,7 @@
 import { createClient, SupabaseClient, User, Session } from '@supabase/supabase-js';
 import { Question } from '../types';
 import { getDailyMixedQuestions, registerDynamicQuestions } from '../data';
+import { getTodayDateString } from '../utils/storage';
 import {
   getQuestionsForDayInBlock,
   getWeekBlockInfo,
@@ -569,26 +570,50 @@ export async function checkGameInitiatedOrPlayedToday(
   const attemptId = `${cleanPlayerId}_${dateStr}`;
 
   // 1. First check Supabase cloud table `partidak`
+  let cloudChecked = false;
   try {
     const { data, error } = await supabase
       .from('partidak')
       .select('*')
-      .eq('player_id', cleanPlayerId)
-      .eq('date_str', dateStr)
+      .or(`id.eq.${attemptId},and(player_id.ilike.${cleanPlayerId},date_str.eq.${dateStr})`)
       .maybeSingle();
 
-    if (!error && data) {
-      const isCompleted = data.status === 'completed' || data.score > 0 || data.time_seconds > 0;
-      const record: PlayerScoreRecord | null = isCompleted
-        ? normalizeScoreRecord(data)
-        : null;
+    if (!error) {
+      cloudChecked = true;
+      if (data) {
+        const isCompleted = data.status === 'completed' || data.score > 0 || data.time_seconds > 0;
+        const record: PlayerScoreRecord | null = isCompleted
+          ? normalizeScoreRecord(data)
+          : null;
 
-      return { hasPlayed: true, record };
+        return { hasPlayed: true, record };
+      } else {
+        // Cloud confirmed: NO game exists for this player today!
+        // (Either they haven't played, or teacher deleted today's game so they can replay!)
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem(ATTEMPTS_STORAGE_KEY);
+            if (raw) {
+              const set: Record<string, number> = JSON.parse(raw);
+              if (set[attemptId]) {
+                delete set[attemptId];
+                localStorage.setItem(ATTEMPTS_STORAGE_KEY, JSON.stringify(set));
+              }
+            }
+            const stored = getAllStoredRecords().filter(
+              r => !(r.playerId.toLowerCase() === cleanPlayerId && r.dateStr === dateStr)
+            );
+            localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(stored));
+            localStorage.removeItem(`mintzakats_review_${cleanPlayerId}_${dateStr}`);
+          } catch {}
+        }
+        return { hasPlayed: false, record: null };
+      }
     }
   } catch {}
 
-  // 2. Fallback to localStorage
-  if (typeof window !== 'undefined') {
+  // 2. ONLY fallback to localStorage if cloud check was unreachable (e.g. offline)
+  if (!cloudChecked && typeof window !== 'undefined') {
     try {
       const records = getAllStoredRecords();
       const localRec = records.find(
@@ -1257,7 +1282,12 @@ export async function deletePlayerDateRecordAdmin(playerId: string, dateStr: str
 
   // 1. Delete from Supabase `partidak` for this specific date
   try {
-    await supabase.from('partidak').delete().eq('player_id', cleanId).eq('date_str', dateStr);
+    await Promise.all([
+      supabase.from('partidak').delete().eq('id', attemptId),
+      supabase.from('partidak').delete().eq('player_id', cleanId).eq('date_str', dateStr),
+      supabase.from('partidak').delete().ilike('player_id', cleanId).eq('date_str', dateStr),
+      supabase.from('partidak').delete().ilike('player_name', cleanId).eq('date_str', dateStr),
+    ]);
   } catch (e) {
     console.warn('deletePlayerDateRecordAdmin partidak error:', e);
   }
@@ -1267,28 +1297,34 @@ export async function deletePlayerDateRecordAdmin(playerId: string, dateStr: str
     const { data: remainingRecords } = await supabase
       .from('partidak')
       .select('date_str')
-      .eq('player_id', cleanId)
+      .or(`player_id.ilike.${cleanId},player_name.ilike.${cleanId}`)
       .eq('status', 'completed');
 
     const remainingDates = remainingRecords ? remainingRecords.map(r => r.date_str) : [];
-    const newStreak = calculateStreakFromDates(remainingDates, dateStr);
+    const todayMadrid = getTodayDateString();
+    const newStreak = calculateStreakFromDates(remainingDates, todayMadrid);
     const lastDate = remainingDates.sort().reverse()[0] || null;
 
     if (remainingDates.length === 0) {
-      await supabase.from('jokalari_egoera').delete().eq('player_id', cleanId);
+      await supabase.from('jokalari_egoera').update({
+        streak: 0,
+        last_played_date: null,
+        last_game_mistakes: [],
+        updated_at: new Date().toISOString(),
+      }).or(`player_id.ilike.${cleanId},player_name.ilike.${cleanId}`);
     } else {
       await supabase.from('jokalari_egoera').update({
         streak: newStreak,
         last_played_date: lastDate,
         last_game_mistakes: [],
         updated_at: new Date().toISOString(),
-      }).eq('player_id', cleanId);
+      }).or(`player_id.ilike.${cleanId},player_name.ilike.${cleanId}`);
     }
   } catch (e) {
     console.warn('deletePlayerDateRecordAdmin egoera update error:', e);
   }
 
-  // 3. Clean in localStorage (both leaderboard records & attempt lock)
+  // 3. Clean in localStorage (both leaderboard records, review cache & attempt lock)
   if (typeof window !== 'undefined') {
     try {
       const records = getAllStoredRecords().filter(
@@ -1304,6 +1340,8 @@ export async function deletePlayerDateRecordAdmin(playerId: string, dateStr: str
           localStorage.setItem(ATTEMPTS_STORAGE_KEY, JSON.stringify(attempts));
         }
       }
+
+      localStorage.removeItem(`mintzakats_review_${cleanId}_${dateStr}`);
     } catch {}
   }
 
